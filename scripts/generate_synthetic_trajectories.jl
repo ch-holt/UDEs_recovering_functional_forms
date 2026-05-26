@@ -68,7 +68,7 @@ function run_seird_functional_form(fixed_p, varying_p, obs_length)
     D0 = fixed_p.D0
 
     # Retrieve estimated parameters
-    N = varying_p.population
+    population = varying_p.population
     prevalence = varying_p.prevalence
     delta = varying_p.delta
     R0_reproduction = varying_p.R0_reproduction
@@ -76,8 +76,8 @@ function run_seird_functional_form(fixed_p, varying_p, obs_length)
 
     # Derive other parameters
     beta0 = R0_reproduction * (gamma + delta)
-    I0 = max(1.0, prevalence * N)
-    S0 = N - E0 - I0 - R0_recovered - D0
+    I0 = max(1.0, prevalence * population)
+    S0 = population - E0 - I0 - R0_recovered - D0
 
     # Define initial state
     init_state = [S0, E0, I0, R0_recovered, D0]

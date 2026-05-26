@@ -12,12 +12,16 @@ using DrWatson
 using JLD2
 using Random
 using LinearAlgebra
+using Plots
+using MLJ
+using SymbolicRegression
+using .Functions
 
 # Set seed for reproducibility
 rng = Random.seed!(1234)
 
 
-sim_name = "noisy_beta_seeded_normalised"
+
 
 #========================================================
 LOAD DATA
@@ -49,14 +53,14 @@ beta0 = R0_reproduction * (gamma + delta)
 
 true_beta_noiseless = beta0 .* exp.(-zeta .* delta .*data)
 
-
-
 #========================================================
 ADD NOISE
 =========================================================#
 
 # Taken from Pant 2025 -- need to justify this choice
-noise_SD = 0.025
+noise_SD = 0.027
+
+sim_name = "noisy_beta_noise_$(noise_SD)"
 
 # add Gaussian noise
 sd = noise_SD * max(0.5, maximum(true_beta_noiseless))
@@ -85,7 +89,8 @@ x_hat = reshape(data./population, :, 1)
 y_hat = noisy_beta 
 
 # Create output directory
-output_dir = joinpath(@__DIR__, "..", "scripts", "outputs", "noisy_beta_outputs")
+mkpath(joinpath(@__DIR__, "..", "scripts", "outputs", "$(sim_name)_outputs"))
+output_dir = joinpath(@__DIR__, "..", "scripts", "outputs", "$(sim_name)_outputs")
 
 model = SRRegressor(
     niterations=100,
@@ -106,7 +111,33 @@ mach = machine(model, x_hat, y_hat)
 
 fit!(mach)
 
-report(mach)
+r = report(mach)
+
+plot_title = "Log10 loss against noisy β (sigma = $noise_SD)"
+
+# Save the report in the output directory
+save(joinpath(output_dir, "SR_report.jld2"), "report", r)
+
+# Select and print the 'best' equation selected by the algorithm
+println(r.best_idx)
+
+
+# The equation for that index:
+println(r.equation_strings[r.best_idx])
+
+# Plot complexity against MSE
+complexities = r.complexities
+losses = r.losses
+log_losses = log10.(losses)
+p_complexity = scatter(complexities, log_losses, label="SR equations", color=:blue)
+xlabel!(p_complexity, "Complexity")
+ylabel!(p_complexity, plot_title)
+title!(p_complexity, "SR complexity vs " * plot_title)
+plot!(p_complexity, grid=true, gridalpha=0.3)
+plot!(p_complexity, complexities, log_losses, label=false, color=:blue, lw=2)
+display(p_complexity)
+savefig(p_complexity, joinpath(figures_dir, "$(sim_name)_SR_complexity_vs_loss.png"))
+savefig(p_complexity, joinpath(output_dir, "$(sim_name)_SR_complexity_vs_loss.png"))
 
 
 
@@ -116,6 +147,7 @@ TESTING
 =============================================================#
 
 # Symbolic Regression result
+# Select equation of complexity 6 (matches the known true functional form)
 SR_beta = predict(mach, (data=x_hat, idx=6))
 
 mse_SR_true = Functions.loss_mse(SR_beta, true_beta_noiseless)
