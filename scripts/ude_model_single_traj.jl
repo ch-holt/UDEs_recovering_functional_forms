@@ -25,7 +25,7 @@ DEFINE HYPERPARAMETERS
 =========================================================#
 
 # Define strings for file names and directory for results
-sim_name ="synthesised_use_normalised_infections_optimal_250326"
+sim_name ="testing"
 model_name = "ude_single"
 if !isdir(datadir("sims", model_name, sim_name)) 
 	mkpath(datadir("sims", model_name, sim_name))
@@ -43,7 +43,7 @@ n_sims = 100
 LOAD DATA
 =========================================================#
 
-dataset = load(datadir("synthesised_trajectories_single", "synthesised_MA.jld2"))
+dataset = JLD2.load(datadir("synthesised_trajectories_single", "synthesised_MA.jld2"))
 
 # Extract infectious individuals and days from the dataset
 data = dataset["infectious"]
@@ -232,7 +232,6 @@ function run_model()
     p, st = Lux.setup(rng, beta_network)
     p = ComponentArray(p)
 
-
     # Combine all parameters into a single object for optimisation
     p_init = ComponentArray(
         nn_params = p,
@@ -242,35 +241,17 @@ function run_model()
         tmax = train_length
     )
 
-
     # Make sure to start with a stable parameterization
     l_init = Functions.loss_ude(p_init, predict_ude, data)[1]
     println("Initial loss: $l_init")
-#========================================================
-    while l_init > 1e4
-		println("Unstable initial parameterization. Restarting..., $l_init")
-        # Initialise parameters
-        p, st = Lux.setup(rng, beta_network)
-        p = ComponentArray(p)
-
-
-        # Combine all parameters into a single object for optimisation
-        p_init = ComponentArray(
-            nn_params = p,
-            gamma = gamma,
-            sigma = sigma,
-            delta = delta,
-            tmax = train_length
-        )
-        l_init = Functions.loss_ude(p_init, predict_ude, data)[1]
-	end
-=========================================================# 
 
     p_trained, losses_final = train_ude(p_init, maxiters = maxiters)
 
     # Evaluate final long term results 
     long_term_prob= remake(prob_ude, p = p_trained, tspan = (1.0, 3*365.0))
     long_term_pred = solve(long_term_prob, Rosenbrock23(), saveat=1, dense = false)
+
+    beta_prediction = [beta_network([long_term_pred[3, i] / population], p_trained.nn_params, st_nn)[1][1] for i in 1:length(long_term_pred[3, :])]
 
     region = "Massachusetts"
     param_name = hidden_dims
@@ -289,7 +270,7 @@ function run_model()
 
 
 	save(datadir("sims", model_name, sim_name, fname, "results.jld2"),
-		"p", p_trained, "losses", losses_final, "prediction", Array(long_term_pred),
+		"p", p_trained, "losses", losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_prediction,
 		"days", days)
 	println("Finished run: $(region) on thread $(Threads.threadid())")
 
