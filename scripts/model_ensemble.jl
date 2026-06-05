@@ -25,7 +25,7 @@ FUNCTION TO GENERATE PLOTS OF SIMULATIONS
 function plot_simulation(sim_name, plot_title)
 
     # Load the observed data
-    dataset = load(datadir("synthesised_trajectories_single", "synthesised_MA.jld2"))
+    dataset = JLD2.load(datadir("synthesised_trajectories_single", "synthesised_MA.jld2"))
     # Just use infectious trajectory
     obs = dataset["infectious"]
     days = dataset["days"]
@@ -39,7 +39,7 @@ function plot_simulation(sim_name, plot_title)
         # Only include directories
         if isdir(joinpath(root, filename))
             # Extract results, predictions and losses
-            results = load(datadir("sims", "ude_single", sim_name, filename, "results.jld2"))
+            results = JLD2.load(datadir("sims", "ude_single", sim_name, filename, "results.jld2"))
             pred = results["prediction"]
             # Extract the predicted infectious trajectory for the training data
             i_traj = pred[3, 1:length(obs)]
@@ -88,7 +88,7 @@ end
 #========================================================
 PRODUCE ENSEMBLE PLOTS
 =========================================================# 
-sim_name = "synthesised_MA_ODE_solve_rosenbrock"
+sim_name = "270526_add_regularisation"
 plot_title = "Single-trajectory UDE model predictions 100 sims"
 plot_simulation(sim_name, plot_title)
 
