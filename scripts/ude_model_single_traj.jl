@@ -15,6 +15,9 @@ using DiffEqFlux, Zygote
 using Optimisers
 using DifferentialEquations
 using Plots
+using JLD2
+using Optimization
+using OptimizationOptimJL
 using Random; rng = Random.default_rng()
 # Call the loss functions
 include(joinpath(@__DIR__, "functions.jl"))
@@ -25,7 +28,7 @@ DEFINE HYPERPARAMETERS
 =========================================================#
 
 # Define strings for file names and directory for results
-sim_name ="testing"
+sim_name ="270526_add_regularisation_and_lfbgs"
 model_name = "ude_single"
 if !isdir(datadir("sims", model_name, sim_name)) 
 	mkpath(datadir("sims", model_name, sim_name))
@@ -33,7 +36,7 @@ end
 
 # Number of data points used for training (total number of entries in the dataset)
 const train_length = 365
-const maxiters = 2500
+
 # set the number of hidden dimensions in the neural network equal to 3
 hidden_dims = 5
 # do 100 simulations 
@@ -163,9 +166,9 @@ TRAINING
 =========================================================# 
 
 
-function train_ude(p; maxiters = maxiters)
+function train_ude(p; maxiters_adam, maxiters_lfbgs)
 
-    # Set up optimisation
+    # Set up optimisation (first Adam then LBFGS)
     optimised_state = Optimisers.setup(Optimisers.Adam(1e-3), p)
 
     # Create 1D vector to track losses during training
@@ -173,11 +176,11 @@ function train_ude(p; maxiters = maxiters)
     best_loss = Inf
     best_p = p
 
-    for iter in 1:maxiters
+    for iter in 1:maxiters_adam
         # Compute the loss, predicted mortalities and gradient function
         (l, pred), back_all = pullback(theta -> Functions.loss_ude(theta, predict_ude, data), p)
         println("Iteration $iter, Loss: $l")
-        # Evaluate the gradient fo the loss w.r.t p
+        # Evaluate the gradient of the loss w.r.t p
         grad = back_all((one(l), nothing))[1]
 
     	# Stop training if 5 consecutive Inf losses
@@ -199,24 +202,41 @@ function train_ude(p; maxiters = maxiters)
             best_loss = l
             best_p = p
         end
-
-#========================================================
-RUN WITHOUT PLOTTING
-        if iter % 50 == 0
-            display("Total loss: $l")
-            x = days[1:length(pred)]
-            pl = scatter(x, data[1:length(pred)], color=:black, markersize=2,
-                label="Data", xlabel="Day", ylabel="Daily new infections", title="Iteration $iter")
-            plot!(pl, x, pred, color=:red, linewidth=2, label="Prediction")
-            display(pl)
-		end	
-========================================================#
-
-
+        
         # Update parameters using the gradient
         optimised_state, p = Optimisers.update(optimised_state, p, grad)
 
     end
+
+    # Then do LBFGS optimisation
+    adtype = Optimization.AutoZygote()
+    optfunc   = Optimization.OptimizationFunction(
+                 (theta, _) -> Functions.loss_ude(theta, predict_ude, data)[1],
+                 adtype)
+    optprob = Optimization.OptimizationProblem(optfunc, best_p)
+
+    iter_lbfgs = Ref(0)
+    res = Optimization.solve(
+        optprob,
+        Optim.LBFGS(m=10),
+        callback = (state, l) -> begin
+            iter_lbfgs[] += 1
+            push!(losses, l)
+
+            if l < best_loss
+                best_loss = l
+                best_p = state.u
+            end
+
+            iter_lbfgs[] % 50 == 0 && println("LBFGS iter $(iter_lbfgs[]): $l")
+            return false
+        end,
+        maxiters = maxiters_lfbgs
+    )
+
+    best_p = res.u  # take Optim's own best if it tracked it
+    return best_p, losses
+
 
     return best_p, losses
 end
@@ -245,7 +265,7 @@ function run_model()
     l_init = Functions.loss_ude(p_init, predict_ude, data)[1]
     println("Initial loss: $l_init")
 
-    p_trained, losses_final = train_ude(p_init, maxiters = maxiters)
+    p_trained, losses_final = train_ude(p_init, maxiters_adam = 2500, maxiters_lfbgs = 2000)
 
     # Evaluate final long term results 
     long_term_prob= remake(prob_ude, p = p_trained, tspan = (1.0, 3*365.0))
@@ -269,7 +289,7 @@ function run_model()
 	mkpath(datadir("sims", model_name, sim_name, fname))
 
 
-	save(datadir("sims", model_name, sim_name, fname, "results.jld2"),
+	JLD2.save(datadir("sims", model_name, sim_name, fname, "results.jld2"),
 		"p", p_trained, "losses", losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_prediction,
 		"days", days)
 	println("Finished run: $(region) on thread $(Threads.threadid())")

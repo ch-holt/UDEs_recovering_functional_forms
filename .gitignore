@@ -5,3 +5,5 @@ scripts/figures/
 scripts/generate_ground_truth_values.jl
 scripts/testing.jl
 scripts/outputs/
+scripts/classify_sr_equations.jl
+scripts/run_SR_tests.jl

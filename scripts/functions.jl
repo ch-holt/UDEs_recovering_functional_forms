@@ -7,6 +7,7 @@ module Functions
 export loss_ude
 export loss_mse
 export beta_exp
+export beta_rational
 export extract_best_ude
 export add_gaussian_noise
 
@@ -27,7 +28,10 @@ function loss_ude(p_all, predict_ude, data)
     # Mean squared error
     mse = sum((pred .- data).^2)/length(data)
 
-    return mse, pred
+    # L2 penalty on NN weights (regularisation)
+    l2_penalty = 1e-4 * sum(abs2, p_all.nn_params)
+
+    return mse + l2_penalty, pred
 end
 
 # Loss function using MSE for evaluation of performance
@@ -56,6 +60,23 @@ function beta_exp(location, obs)
     return true_beta
 
 end 
+
+function beta_rational(location, obs)
+    
+    delta = DELTA[location]
+    R0_reproduction = R0_REPRODUCTION[location]
+    zeta = ZETA[location]
+
+    # Derive other parameters
+    # Infectious period of 10 days represented by recovery rate gamma
+    gamma = 1/10
+    beta0 = R0_reproduction * (gamma + delta)
+
+    true_beta = beta0 ./ (1 .+ zeta .* delta .* obs)
+
+    return true_beta
+
+end
 
 function extract_best_ude(sim_name, obs)
     # Define the root file path
@@ -103,4 +124,13 @@ function add_gaussian_noise(noise_SD, data, rng)
     return noisy_beta
 end
 
+function _format_equation_sigfigs(equation_text::AbstractString)
+    number_pattern = r"(?<![A-Za-z_])[+-]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?"
+    return replace(equation_text, number_pattern => match -> begin
+        number = parse(Float64, match)
+        string(round(number, sigdigits=3))
+    end)
 end
+
+end
+
