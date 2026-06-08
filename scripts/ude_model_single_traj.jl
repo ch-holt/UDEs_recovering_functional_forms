@@ -28,7 +28,7 @@ DEFINE HYPERPARAMETERS
 =========================================================#
 
 # Define strings for file names and directory for results
-sim_name ="270526_add_regularisation_and_lfbgs"
+sim_name ="rational_beta_single_traj"
 model_name = "ude_single"
 if !isdir(datadir("sims", model_name, sim_name)) 
 	mkpath(datadir("sims", model_name, sim_name))
@@ -40,13 +40,13 @@ const train_length = 365
 # set the number of hidden dimensions in the neural network equal to 3
 hidden_dims = 5
 # do 100 simulations 
-n_sims = 100
+n_sims = 50
 
 #========================================================
 LOAD DATA
 =========================================================#
 
-dataset = JLD2.load(datadir("synthesised_trajectories_single", "synthesised_MA.jld2"))
+dataset = JLD2.load(datadir("synthetic_trajectories_rational", "synthesised_MA.jld2"))
 
 # Extract infectious individuals and days from the dataset
 data = dataset["infectious"]
@@ -97,7 +97,7 @@ tspan = [1, train_length]
 # We have two hidden layers with hidden_dims neurons and gelu activation function
 # We are taking normalised I(t) as an input and outputting beta(t)
 beta_network = Lux.Chain(Lux.Dense(1=>hidden_dims, gelu), Lux.Dense(hidden_dims=>hidden_dims, gelu),
-                         Lux.Dense(hidden_dims=>1, softplus))
+                         Lux.Dense(hidden_dims=>1, sigmoid))
 
 # Initialise parameters to build the structure for the UDE
 p_nn_temp, st_nn = Lux.setup(rng, beta_network)
@@ -148,11 +148,16 @@ prob_ude = ODEProblem(seird_nn!, init_state, tspan, ph_nn)
 PREDICTION AND LOSS FUNCTIONS
 =========================================================# 
 
-# Predict number of daily infections (movement of people from S -> E)
+# Predict number infectious individuals
 function predict_ude(p_all)
     
     prob = remake(prob_ude, p = p_all)
     sol_ude = solve(prob, Rosenbrock23(), saveat=1.0, dense = false)
+
+    # Return nothing if solve failed or didn't reach full timespan
+    if sol_ude.retcode != ReturnCode.Success || length(sol_ude.t) < train_length
+        return nothing
+    end
 
     I_pred = sol_ude[3, 1:train_length]
 
@@ -234,10 +239,7 @@ function train_ude(p; maxiters_adam, maxiters_lfbgs)
         maxiters = maxiters_lfbgs
     )
 
-    best_p = res.u  # take Optim's own best if it tracked it
-    return best_p, losses
-
-
+    best_p = res.u
     return best_p, losses
 end
 

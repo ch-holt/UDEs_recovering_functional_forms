@@ -100,6 +100,7 @@ end
     # Create grid to store results
     results = DataFrame(results_list)
     results_dir = joinpath(@__DIR__, "..", "scripts", "outputs", "SR_noisy_beta_results")
+    mkpath(results_dir)
     JLD2.save(joinpath(results_dir, "SR_noisy_beta_results.jld2"), "results", results)
 
     # Convert to DataFrame and save as CSV

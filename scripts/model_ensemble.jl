@@ -99,7 +99,7 @@ FUNCTION TO PLOT APPROXIMATED FUNCTION AGAINST SYNTHESISED DATA
 function plot_individual_traj(sim_num, sim_name, synthesised_data)
 
     # Load the observed data and varying parameters
-    dataset = load(datadir("synthesised_trajectories", synthesised_data))
+    dataset = JLD2.load(datadir("synthesised_trajectories", synthesised_data))
     varying_p = ComponentArray(
         population = dataset["varying_p"]["population"],
         prevalence = dataset["varying_p"]["prevalence"],
@@ -120,7 +120,7 @@ function plot_individual_traj(sim_num, sim_name, synthesised_data)
     plot_dir = dirname(root)
 
     # Extract predictions for epidemic trajectory
-    results = load(root)
+    results = JLD2.load(root)
     pred = results["infectious_traj_prediction"]
 
     # Extract the predicted infectious trajectory for the training data

@@ -19,29 +19,29 @@ using MLJ
 using Plots
 using Statistics
 using JLD2
+using DataFrames
 
 
 
 
-function symbolic_regression(x_hat, y_hat, sim_name, location, output_dir, plot_title, seed)
+function symbolic_regression(x_hat, y_hat, sim_name, location, output_dir, plot_title, seed, sing_or_multi, norm_i_traj, nn_output)
     
     # Recover true beta result
     population = POPULATION[location]
-    true_beta_SR = Functions.beta_exp(location, x_hat)
     
     # Normalise for SR
-    x_hat = x_hat./ population
+    #x_hat = x_hat./ population
 
     model = SRRegressor(
-        niterations=100,
+        niterations=10,
         binary_operators=[+, -, *, /],
         unary_operators=[exp],
         maxsize = 20,
         output_directory = output_dir,
         # Make results reproducible by disabling multithreading
         #populations = 15,
-        #population_size = 100,
-        #parsimony = 0.01,
+        population_size = 50,
+        parsimony = 0.01,
         complexity_of_constants = 2,
         parallelism=:serial,
         seed = seed,
@@ -67,41 +67,57 @@ function symbolic_regression(x_hat, y_hat, sim_name, location, output_dir, plot_
 
     # Plot SR prediction against true beta
 
-    # Recover SR prediction for the best equation (using idx in named tuple)
+    # Recover SR prediction for the best equation
     SR_beta = predict(mach, (data=x_hat, idx=r.best_idx))
 
 
     # Make the input for SR a vector
     target_beta = vec(y_hat)
 
-    mse_SR_true = Functions.loss_mse(SR_beta, true_beta_SR)
-    mse_SR_input = Functions.loss_mse(SR_beta, target_beta)
-    mse_input_true = Functions.loss_mse(target_beta, true_beta_SR)
-
-    
-    days = 1:length(target_beta)
+    days = 1:length(norm_i_traj)
 
     #=============================================================
     MAKE PLOTS
     =============================================================#
 
-    # Plot true beta against the input for the SR (y_hat) against the SR
-    p_comparison = plot(days, true_beta_SR, lw=2.5, label="True β", color=:black)
+    # Plot true beta against the input for the SR (y_hat) against the SR evaluation over time
+
+    # First retrieve the SR prediction for the true infection trajectory
+    if sing_or_multi == "single"
+        SR_beta_true_traj = reshape(norm_i_traj, :, 1)
+    elseif sing_or_multi == "multi"
+        SR_beta_true_traj = DataFrame(
+                            I     = vec(norm_i_traj),
+                            beta0 = fill(x_hat.beta0[1], length(norm_i_traj)),
+                            zeta  = fill(x_hat.zeta[1],  length(norm_i_traj)),
+                            delta = fill(x_hat.delta[1], length(norm_i_traj))
+    )
+    end
+
+    true_beta_days_traj = reshape(Functions.beta_exp(location, norm_i_traj.*population),:,1)
+    SR_beta_days_traj = reshape(predict(mach, (data=SR_beta_true_traj, idx=r.best_idx)),:,1)
+    target_beta_days = reshape(nn_output, :, 1)
+
+    mse_SR_true_days = Functions.loss_mse(SR_beta_days_traj, true_beta_days_traj)
+    mse_SR_input_days = Functions.loss_mse(SR_beta_days_traj, target_beta_days)
+    mse_input_true_days = Functions.loss_mse(target_beta_days, true_beta_days_traj)
+
+    p_comparison = plot(days, true_beta_days_traj[1:length(days)], lw=2.5, label="True β", color=:black)
     
-    plot!(p_comparison, days, SR_beta, lw=2.5, ls=:dash, label="SR-recovered β", color=:red, alpha=0.8)
-    plot!(p_comparison, days, target_beta, lw=2.5, ls=:dot, label="SR input", color=:lightblue, alpha=0.8)
-    xlabel!(p_comparison, "Day")
+    plot!(p_comparison, days, SR_beta_days_traj[1:length(days)], lw=2.5, ls=:dash, label="SR-recovered β", color=:red, alpha=0.8)
+    plot!(p_comparison, days, target_beta_days[1:length(days)], lw=2.5, ls=:dot, label="SR input", color=:lightblue, alpha=0.8)
+    xlabel!(p_comparison, "Day")    
     ylabel!(p_comparison, "β")
     title!(p_comparison, "Symbolic Regression on $(plot_title) vs true β\nEq: $(simplified_equation)", titlefontsize=8)
     plot!(p_comparison, legend=:best, legendfontsize=10)
     plot!(p_comparison, grid=true, gridalpha=0.3)
 
     x_ann = days[end] * 0.75
-    y_ann = maximum(target_beta) * 0.85
-    dy = maximum(target_beta) * 0.06
-    annotate!(p_comparison, x_ann, y_ann, text("MSE (input vs SR) = $(round(mse_SR_input, sigdigits=3))", 9))
-    annotate!(p_comparison, x_ann, y_ann - dy, text("MSE (SR vs true) = $(round(mse_SR_true, sigdigits=3))", 9))
-    annotate!(p_comparison, x_ann, y_ann - 2*dy, text("MSE (input vs true) = $(round(mse_input_true, sigdigits=3))", 9))
+    y_ann = maximum(target_beta_days) * 0.85
+    dy = maximum(target_beta_days) * 0.06
+    annotate!(p_comparison, x_ann, y_ann, text("MSE (input vs SR) = $(round(mse_SR_input_days, sigdigits=3))", 9))
+    annotate!(p_comparison, x_ann, y_ann - dy, text("MSE (SR vs true) = $(round(mse_SR_true_days, sigdigits=3))", 9))
+    annotate!(p_comparison, x_ann, y_ann - 2*dy, text("MSE (input vs true) = $(round(mse_input_true_days, sigdigits=3))", 9))
 
     savefig(p_comparison, joinpath(output_dir, "$(sim_name)_SR_beta_vs_true.png"))
 
@@ -129,17 +145,29 @@ function symbolic_regression(x_hat, y_hat, sim_name, location, output_dir, plot_
 
 
     # Plot beta vs x_hat
-    x_hat_vs_beta = plot(x_hat, true_beta_SR, lw=2.5, label="True β", color=:black)
+    if sing_or_multi == "single"
+        true_beta_SR = Functions.beta_exp(location, x_hat.*population)
+        x_hat_I = x_hat
+    elseif sing_or_multi == "multi"
+        true_beta_SR = Functions.beta_exp(location, x_hat.I.*population)
+        x_hat_I = x_hat.I
+    end
+
+    x_hat_vs_beta = plot(x_hat_I, true_beta_SR, lw=2.5, label="True β", color=:black)
+
+    mse_SR_true = Functions.loss_mse(SR_beta, true_beta_SR)
+    mse_SR_input = Functions.loss_mse(SR_beta, target_beta)
+    mse_input_true = Functions.loss_mse(target_beta, true_beta_SR)
     
-    plot!(x_hat_vs_beta, x_hat, SR_beta, lw=2.5, ls=:dash, label="SR-recovered β", color=:red, alpha=0.8)
-    plot!(x_hat_vs_beta, x_hat, target_beta, lw=2.5, ls=:dot, label="SR input", color=:lightblue, alpha=0.8)
+    plot!(x_hat_vs_beta, x_hat_I, SR_beta, lw=2.5, ls=:dash, label="SR-recovered β", color=:red, alpha=0.8)
+    plot!(x_hat_vs_beta, x_hat_I, target_beta, lw=2.5, ls=:dot, label="SR input", color=:lightblue, alpha=0.8)
     xlabel!(x_hat_vs_beta, "x̂ = I / N")
     ylabel!(x_hat_vs_beta, "β")
     title!(x_hat_vs_beta, "Symbolic Regression on $(plot_title) vs true β\nEq: $(simplified_equation)", titlefontsize=8)
     plot!(x_hat_vs_beta, legend=:best, legendfontsize=10)
     plot!(x_hat_vs_beta, grid=true, gridalpha=0.3)
 
-    x_ann = days[end] * 0.75
+    x_ann = maximum(x_hat_I) * 0.75
     y_ann = maximum(target_beta) * 0.85
     dy = maximum(target_beta) * 0.06
     annotate!(x_hat_vs_beta, x_ann, y_ann, text("MSE (input vs SR) = $(round(mse_SR_input, sigdigits=3))", 9))
@@ -148,10 +176,10 @@ function symbolic_regression(x_hat, y_hat, sim_name, location, output_dir, plot_
     savefig(x_hat_vs_beta, joinpath(output_dir, "$(sim_name)_SR_beta_against_x_hat.png"))
 
     # Plot differences against days
-    NN_minus_true = target_beta - true_beta_SR
-    SR_minus_true = SR_beta - true_beta_SR
-    p_diff = plot(days, NN_minus_true, lw=2.5, ls=:dot, label="y_hat - true β", color=:lightblue, alpha=0.8)
-    plot!(p_diff, SR_minus_true, lw=2.5, ls=:dot, label="SR result for y_hat - true β", color=:red)
+    NN_minus_true = target_beta_days - true_beta_days_traj
+    SR_minus_true = SR_beta_days_traj - true_beta_days_traj
+    p_diff = plot(days, NN_minus_true[1:length(days)], lw=2.5, ls=:dot, label="y_hat - true β", color=:lightblue, alpha=0.8)
+    plot!(p_diff, days, SR_minus_true[1:length(days)], lw=2.5, ls=:dot, label="SR result for y_hat - true β", color=:red)
     xlabel!(p_diff, "Days")
     ylabel!(p_diff, "Difference in β")
     title!(p_diff, "Difference between true β and y_hat = $(plot_title) and SR approx \nEq: $(simplified_equation)", titlefontsize=8)
@@ -160,11 +188,19 @@ function symbolic_regression(x_hat, y_hat, sim_name, location, output_dir, plot_
 
     savefig(p_diff, joinpath(output_dir, "$(sim_name)_SR_NN_minus_true_beta.png"))
 
-    # Plot differences against normalized x̂ = I / N
-    x_hat_norm = vec(x_hat)
+    # Plot differences against normalized x̂
+    NN_minus_true = target_beta - true_beta_SR
+    SR_minus_true = SR_beta - true_beta_SR
+
+    if sing_or_multi == "single"
+        x_hat_norm = x_hat
+    elseif sing_or_multi == "multi"
+        x_hat_norm = x_hat.I
+    end
+
     p_diff_xhat = plot(x_hat_norm, NN_minus_true, lw=2.5, ls=:dot, label="y_hat - true β", color=:lightblue, alpha=0.8)
     plot!(p_diff_xhat, x_hat_norm, SR_minus_true, lw=2.5, ls=:dot, label="SR result for y_hat - true β", color=:red)
-    xlabel!(p_diff_xhat, "x̂ = I / N")
+    xlabel!(p_diff_xhat, "x̂=I/N")
     ylabel!(p_diff_xhat, "Difference in β")
     title!(p_diff_xhat, "Difference between true β and y_hat = $(plot_title) and SR approx \nEq: $(simplified_equation)", titlefontsize=8)
     plot!(p_diff_xhat, legend=:topright, legendfontsize=10)
