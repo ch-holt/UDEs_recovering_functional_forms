@@ -20,6 +20,9 @@ using ComponentArrays
 using DSP
 using Plots 
 
+include(joinpath(@__DIR__, "functions.jl"))
+using .Functions
+
 #========================================================
 DEFINE THE MODEL
 =========================================================#
@@ -38,9 +41,13 @@ function seird_functional!(du, u, p, t)
         return
     end
 
-    # Define the functional form of beta
-    arg_exp = p.zeta * p.delta * I
-    beta = p.beta0 * exp(-arg_exp)
+    # Define the functional form of beta 
+    if p.beta == "exponential"
+        beta_function = Functions.beta_exp
+    elseif p.beta == "rational"   
+        beta_function = Functions.beta_rational
+    end
+    beta = beta_function(p.location, I)
 
     # Define the SEIRD equations
     du[1] = -beta * S * I / N
@@ -58,7 +65,7 @@ FUNCTION TO RUN THE MODEL
 # p must be of the form (beta0, delta, sigma, gamma, zeta)
 # fixed_p must be of the form (sigma, gamma, zeta, population, E0, R0_recovered, D0)
 # varying_p must be of the form (population,prevalence, delta, R0_reproduction)
-function run_seird_functional_form(fixed_p, varying_p, obs_length)
+function run_seird_functional_form(fixed_p, varying_p, obs_length, location, beta)
 
     # Retrieve fixed parameters
     sigma = fixed_p.sigma
@@ -88,7 +95,9 @@ function run_seird_functional_form(fixed_p, varying_p, obs_length)
         delta = delta,
         sigma = sigma,
         gamma = gamma,
-        zeta = zeta
+        zeta = zeta,
+        beta = beta,
+        location = location
     )
 
     # Align solver times with saved labels days = 1:obs_length
@@ -102,9 +111,9 @@ function run_seird_functional_form(fixed_p, varying_p, obs_length)
     return sol
 end
 
-function generate_synthetic_data(fixed_p, varying_p, obs_length, location)
+function generate_synthetic_data(fixed_p, varying_p, obs_length, location, beta)
     # Run model
-    sim = run_seird_functional_form(fixed_p, varying_p, obs_length)
+    sim = run_seird_functional_form(fixed_p, varying_p, obs_length, location, beta)
 
     # Extract raw states 
     s_traj = sim[1, :]
@@ -117,10 +126,10 @@ function generate_synthetic_data(fixed_p, varying_p, obs_length, location)
 
     # Save the result
     fname = "synthesised_$(location)" * ".jld2"
-	mkpath(datadir("synthesised_trajectories_single"))
+	mkpath(datadir("synthetic_trajectories_$(beta)"))
 
 
-	save(datadir("synthesised_trajectories_single", fname),
+	save(datadir("synthetic_trajectories_$(beta)", fname),
 		"fixed_p", fixed_p, "varying_p", varying_p, "days", 1:obs_length, 
         "susceptible", s_traj, "exposed", e_traj, "infectious", i_traj, "recovered", r_traj, "deaths", d_traj)
 
@@ -158,12 +167,15 @@ using .EstimatedGroundTruthParameters: POPULATION, PREVALENCE, R0_REPRODUCTION, 
 # Loop through each combination of parameters for each state and generate synthetic data
 #for location in keys(POPULATION)
 # Just generating a single trajectory
-for location in ["MA"]
-    population = POPULATION[location]
-    prevalence = PREVALENCE[location]
-    delta = DELTA[location]
-    R0_reproduction = R0_REPRODUCTION[location]
-    zeta = ZETA[location]
+for location in keys(POPULATION)
+    beta = "rational"
+
+
+    local population = POPULATION[location]
+    local prevalence = PREVALENCE[location]
+    local delta = DELTA[location]
+    local R0_reproduction = R0_REPRODUCTION[location]
+    local zeta = ZETA[location]
 
     # Create component arrays
     fixed_p = ComponentArray(sigma = sigma,     
@@ -179,5 +191,5 @@ for location in ["MA"]
                                 zeta = zeta)
 
     # Generate data and save to JLD2 file
-    generate_synthetic_data(fixed_p, varying_p, 365, location)
+    generate_synthetic_data(fixed_p, varying_p, 365, location, beta)
 end

@@ -15,10 +15,18 @@ include("estimated_ground_truth_parameters.jl")
 using .EstimatedGroundTruthParameters: POPULATION, PREVALENCE, R0_REPRODUCTION, DELTA, ZETA
 using DrWatson
 using JLD2
+using ComponentArrays
+using Zygote
+using Optimization
 
 # Loss function using MSE
 function loss_ude(p_all, predict_ude, data)
     pred = predict_ude(p_all)
+
+    if isnothing(pred)
+        println("ODE solve failed")
+        return Inf, nothing
+    end
 
     # Align lengths
     n = min(length(pred), length(data))
@@ -32,6 +40,48 @@ function loss_ude(p_all, predict_ude, data)
     l2_penalty = 1e-4 * sum(abs2, p_all.nn_params)
 
     return mse + l2_penalty, pred
+end
+
+function combined_loss_ude(nn_params, predict_ude, trajectories)
+    
+    gamma = 1/10
+    println("Evaluating combined loss for current parameters across $(length(trajectories)) trajectories...")
+    # Loop through all simulations
+    individual_losses = Float64[]
+    total_grad = zero(nn_params)
+    total_loss = 0.0
+
+    for (i, traj) in enumerate(trajectories)
+        data = traj.data
+        varying_p = traj.varying_p
+
+        # Derive beta0 specific to current trajectory
+        beta0 = varying_p.R0_reproduction * (gamma + varying_p.delta)
+
+        # Update the parameters for the current trajectory to include the varying parameters
+        p_all = ComponentArray(
+            nn_params = nn_params,
+            population = varying_p.population,
+            prevalence = varying_p.prevalence,
+            beta0 = beta0,
+            zeta = varying_p.zeta,
+            r0_reproduction = varying_p.R0_reproduction,
+            delta = varying_p.delta
+        )
+        println("Evaluating trajectory $i")
+        # Compute the loss and gradient for the current trajectory
+        (l, pred), back_all = pullback(theta -> Functions.loss_ude(theta, predict_ude, data), p_all)
+
+        # Evaluate the gradient of the loss for the current trajectory w.r.t p_all
+        grad = back_all((one(l), nothing))[1]
+        println("Loss for trajectory $i: $l")
+        push!(individual_losses, l)
+
+        total_loss = sum(individual_losses)
+        total_grad .+= grad.nn_params
+
+    end
+    return total_loss, total_grad
 end
 
 # Loss function using MSE for evaluation of performance
