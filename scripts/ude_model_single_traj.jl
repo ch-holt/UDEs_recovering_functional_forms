@@ -28,7 +28,7 @@ DEFINE HYPERPARAMETERS
 =========================================================#
 
 # Define strings for file names and directory for results
-sim_name ="rational_beta_single_traj"
+sim_name ="exponential_beta_single_traj"
 model_name = "ude_single"
 if !isdir(datadir("sims", model_name, sim_name)) 
 	mkpath(datadir("sims", model_name, sim_name))
@@ -46,7 +46,7 @@ n_sims = 50
 LOAD DATA
 =========================================================#
 
-dataset = JLD2.load(datadir("synthetic_trajectories_rational", "synthesised_MA.jld2"))
+dataset = JLD2.load(datadir("synthetic_trajectories_exponential", "synthesised_MA.jld2"))
 
 # Extract infectious individuals and days from the dataset
 data = dataset["infectious"]
@@ -84,7 +84,7 @@ I0 = max(1.0, prevalence * population)
 S0 = population - E0 - I0 - R0_recovered - D0
 
 # Define initial state
-init_state = [S0, E0, I0, R0_recovered, D0]
+u0 = [S0, E0, I0, R0_recovered, D0]
 
 #========================================================
 SET UP MODEL
@@ -97,7 +97,7 @@ tspan = [1, train_length]
 # We have two hidden layers with hidden_dims neurons and gelu activation function
 # We are taking normalised I(t) as an input and outputting beta(t)
 beta_network = Lux.Chain(Lux.Dense(1=>hidden_dims, gelu), Lux.Dense(hidden_dims=>hidden_dims, gelu),
-                         Lux.Dense(hidden_dims=>1, sigmoid))
+                         Lux.Dense(hidden_dims=>1, softplus))
 
 # Initialise parameters to build the structure for the UDE
 p_nn_temp, st_nn = Lux.setup(rng, beta_network)
@@ -142,16 +142,16 @@ function seird_nn!(du, u, p, t)
     du[5] = delta * I
 end
 
-prob_ude = ODEProblem(seird_nn!, init_state, tspan, ph_nn)
+prob_ude = ODEProblem(seird_nn!, u0, tspan, ph_nn)
 
 #========================================================
 PREDICTION AND LOSS FUNCTIONS
 =========================================================# 
 
 # Predict number infectious individuals
-function predict_ude(p_all)
+function predict_ude(p_all, u0)
     
-    prob = remake(prob_ude, p = p_all)
+    prob = remake(prob_ude, p = p_all, u0 = u0)
     sol_ude = solve(prob, Rosenbrock23(), saveat=1.0, dense = false)
 
     # Return nothing if solve failed or didn't reach full timespan
@@ -183,10 +183,10 @@ function train_ude(p; maxiters_adam, maxiters_lfbgs)
 
     for iter in 1:maxiters_adam
         # Compute the loss, predicted mortalities and gradient function
-        (l, pred), back_all = pullback(theta -> Functions.loss_ude(theta, predict_ude, data), p)
+        l, back_all = pullback(theta -> Functions.loss_ude(theta, predict_ude, data, u0), p)
         println("Iteration $iter, Loss: $l")
         # Evaluate the gradient of the loss w.r.t p
-        grad = back_all((one(l), nothing))[1]
+        grad = back_all((one(l)))[1]
 
     	# Stop training if 5 consecutive Inf losses
 		if l == Inf && length(losses) >= 5 && all(isinf, losses[end-4:end])
@@ -216,7 +216,7 @@ function train_ude(p; maxiters_adam, maxiters_lfbgs)
     # Then do LBFGS optimisation
     adtype = Optimization.AutoZygote()
     optfunc   = Optimization.OptimizationFunction(
-                 (theta, _) -> Functions.loss_ude(theta, predict_ude, data)[1],
+                 (theta, _) -> Functions.loss_ude(theta, predict_ude, data, u0),
                  adtype)
     optprob = Optimization.OptimizationProblem(optfunc, best_p)
 
@@ -239,7 +239,11 @@ function train_ude(p; maxiters_adam, maxiters_lfbgs)
         maxiters = maxiters_lfbgs
     )
 
-    best_p = res.u
+    final_loss = Functions.loss_ude(res.u, predict_ude, data, u0)
+    if final_loss < best_loss
+        best_p = res.u
+    end
+
     return best_p, losses
 end
 
@@ -264,13 +268,13 @@ function run_model()
     )
 
     # Make sure to start with a stable parameterization
-    l_init = Functions.loss_ude(p_init, predict_ude, data)[1]
+    l_init = Functions.loss_ude(p_init, predict_ude, data, u0)
     println("Initial loss: $l_init")
 
     p_trained, losses_final = train_ude(p_init, maxiters_adam = 2500, maxiters_lfbgs = 2000)
 
     # Evaluate final long term results 
-    long_term_prob= remake(prob_ude, p = p_trained, tspan = (1.0, 3*365.0))
+    long_term_prob= remake(prob_ude, p = p_trained, tspan = (1.0, 3*365.0), u0 = u0)
     long_term_pred = solve(long_term_prob, Rosenbrock23(), saveat=1, dense = false)
 
     beta_prediction = [beta_network([long_term_pred[3, i] / population], p_trained.nn_params, st_nn)[1][1] for i in 1:length(long_term_pred[3, :])]

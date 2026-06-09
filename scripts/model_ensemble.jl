@@ -17,6 +17,8 @@ using StatsBase
 using Distributions
 using ComponentArrays
 using DataFrames
+include("estimated_ground_truth_parameters.jl")
+using .EstimatedGroundTruthParameters: POPULATION, PREVALENCE, R0_REPRODUCTION, DELTA, ZETA
 
 #=============================================================
 FUNCTION TO GENERATE PLOTS OF SIMULATIONS
@@ -88,18 +90,19 @@ end
 #========================================================
 PRODUCE ENSEMBLE PLOTS
 =========================================================# 
-sim_name = "270526_add_regularisation"
-plot_title = "Single-trajectory UDE model predictions 100 sims"
+sim_name = "rational_beta_single_traj"
+plot_title = "Single-trajectory UDE model rational beta function"
 plot_simulation(sim_name, plot_title)
 
 #=============================================================
 FUNCTION TO PLOT APPROXIMATED FUNCTION AGAINST SYNTHESISED DATA 
 =============================================================#
 
-function plot_individual_traj(sim_num, sim_name, synthesised_data)
+function plot_individual_traj(sim_num, sim_name, synthesised_data, beta_function, location)
 
     # Load the observed data and varying parameters
-    dataset = JLD2.load(datadir("synthesised_trajectories", synthesised_data))
+    dataset = JLD2.load(datadir("synthetic_trajectories_exponential", synthesised_data))
+
     varying_p = ComponentArray(
         population = dataset["varying_p"]["population"],
         prevalence = dataset["varying_p"]["prevalence"],
@@ -113,6 +116,7 @@ function plot_individual_traj(sim_num, sim_name, synthesised_data)
 
     # Just use infectious trajectory
     obs = dataset["infectious"]
+    I_grid = collect(range(0, 1; length=1000))
     days = dataset["days"]
 
     # Define the root file path
@@ -121,36 +125,27 @@ function plot_individual_traj(sim_num, sim_name, synthesised_data)
 
     # Extract predictions for epidemic trajectory
     results = JLD2.load(root)
-    pred = results["infectious_traj_prediction"]
+    pred = results["prediction"]
 
     # Extract the predicted infectious trajectory for the training data
     i_traj = pred[3, 1:length(obs)]
 
     # Extract beta trajectory
-    beta_pred = results["beta_traj"]
+    beta_pred = reshape(results["beta_prediction"], :, 1)
 
     # Define beta function
-    function true_beta(I)
-        arg_exp = varying_p.zeta * varying_p.delta * I
-        beta = beta0 * exp(-arg_exp)
-        return beta
+    if beta_function == "exponential"
+        true_beta = reshape(Functions.beta_exp(location, obs),:,1)
+        true_beta_against_xhat = reshape(Functions.beta_exp(location, I_grid*population),:,1)
+    elseif beta_function == "rational"
+        true_beta = reshape(Functions.beta_rational(location, obs),:,1)
+        true_beta_against_xhat = reshape(Functions.beta_rational(location, I_grid*population),:,1)
     end
 
-    # Generate true beta values
-    beta_true = true_beta.(i_traj)
-    beta_true_obs = true_beta.(obs)  # debug comparator
-
-    # Ensure both are vectors
-    if ndims(beta_true) > 1
-        beta_true = vec(beta_true)
-    end
-    if ndims(beta_pred) > 1
-        beta_pred = vec(beta_pred)
-    end
     
     # Create trajectory plot
     traj_plot = plot(days[1:length(i_traj)], obs[1:length(i_traj)], color=:black, markersize=2, label="Data", 
-    xlabel="Day", ylabel="Infectious individuals", title="Infectious trajectory for $(sim_name)", legend=:topright)
+    xlabel="Day", ylabel="Infectious individuals", title="Infectious trajectory for $(sim_name) $(location)", legend=:topright)
     plot!(traj_plot, days[1:length(i_traj)], i_traj, color=:red, linewidth=2, label="Predicted trajectory")
     display(traj_plot)
 
@@ -158,15 +153,49 @@ function plot_individual_traj(sim_num, sim_name, synthesised_data)
     savefig(traj_plot, joinpath(plot_dir, "traj_plot.png"))
 
     # Create beta plot
-    beta_plot = plot(days[1:length(beta_true)], beta_true, color=:blue, linewidth=2, label="True beta", 
-    xlabel="Day", ylabel="Beta", title="Beta trajectory for $(sim_name)", legend=:topright)
+    beta_plot = plot(days[1:length(beta_pred)], true_beta, color=:blue, linewidth=2, label="True beta", 
+    xlabel="Day", ylabel="Beta", title="Beta trajectory for $(sim_name) $(location)", legend=:topright)
     plot!(beta_plot, days[1:length(beta_pred)], beta_pred, color=:red, linewidth=2, label="Predicted beta")
     display(beta_plot)
 
     # Save the plot
     savefig(beta_plot, joinpath(plot_dir, "beta_plot.png"))
 
-    return traj_plot, beta_plot
+    # Save the plot
+    savefig(traj_plot, joinpath(plot_dir, "traj_plot.png"))
+
+    # Create beta plot against x_hat
+
+    nn_input = vcat(fill(beta0, 1, 1000), fill(varying_p.zeta, 1, 1000), 
+        fill(varying_p.delta, 1, 1000), reshape(I_grid, 1, :))
+
+    # Retrieve NN parameters that resulted in the lowest error on the training data
+    training_results = JLD2.load(DrWatson.datadir("sims", "ude_multiple", sim_name, sim_num, "training_results.jld2"))
+    p_trained = training_results["p_trained"]
+
+    # Define the NN architecture
+    hidden_dims = 5
+
+    # Retrieve nn architecture
+    beta_network = Lux.Chain(Lux.Dense(4=>hidden_dims, gelu), Lux.Dense(hidden_dims=>hidden_dims, gelu),
+                            Lux.Dense(hidden_dims=>1, softplus))
+
+    # Initialise parameters
+    p_nn_temp, st_nn = Lux.setup(rng, beta_network)
+
+    # Evaluate neural network and extract approximation
+    y_hat = vec(beta_network(nn_input, p_trained, st_nn)[1])
+    
+
+    beta_against_xhat_plot = plot(I_grid, true_beta_against_xhat, color=:blue, linewidth=2, label="True beta", 
+    xlabel="Day", ylabel="Beta", title="Beta trajectory for $(sim_name) $(location)", legend=:topright)
+    plot!(beta_against_xhat_plot, I_grid, y_hat, color=:red, linewidth=2, label="Predicted beta")
+    display(beta_against_xhat_plot)
+
+    # Save the plot
+    savefig(beta_against_xhat_plot, joinpath(plot_dir, "beta_against_xhat_plot.png"))
+
+    return traj_plot, beta_plot, beta_against_xhat_plot
 end
 
 #========================================================
@@ -174,11 +203,11 @@ PRODUCE PLOTS OF SIMULATIONS
 =========================================================# 
 
 
-sim_num = "simulation_v2"
-sim_name = "synthesised_use_5_inputs_optimal_250326"
-for filename in readdir(datadir("sims", "ude_multiple", sim_name, sim_num))
-    if endswith(filename, ".jld2") && isdir(datadir("sims", "ude_multiple", sim_name, sim_num, filename))
-        plot_individual_traj(sim_num, sim_name, filename)
-    end
+sim_num = "simulation_v9"
+sim_name = "exponential_with_time_input_nolbfgs_090626"
+for location in keys(POPULATION)
+    synthesised_data = "synthesised_$(location).jld2"
+    plot_individual_traj(sim_num, sim_name, synthesised_data, "exponential", location)
 end
+
 

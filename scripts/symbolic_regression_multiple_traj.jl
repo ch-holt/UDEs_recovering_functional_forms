@@ -49,13 +49,12 @@ RETRIEVE PREDICTIONS AND PARAMETERS FROM THE BEST SIMULATION
 =============================================================#
 
 sim_settings = "exponential_080626"
-sim_name = "simulation_v2"
-filename = "synthesised_MA.jld2"
+sim_name = "simulation_v1"
+location = "NE"
+filename = "synthesised_$(location).jld2"
 population = POPULATION[location]
 
-# Load the observed data
-dataset = JLD2.load(DrWatson.datadir("synthesised_trajectories_single", "synthesised_MA.jld2"))
-   
+dataset = JLD2.load(datadir("synthetic_trajectories_exponential", filename))
 # Just use infectious trajectory
 obs = dataset["infectious"]
 days = dataset["days"]
@@ -66,8 +65,6 @@ results = JLD2.load(DrWatson.datadir("sims", "ude_multiple", sim_settings, sim_n
 p_trained = training_results["p_trained"]
 days = results["days"]
 norm_i_traj = results["prediction"][3, 1:length(obs)]./ population
-
-dataset = JLD2.load(datadir("synthetic_trajectories_exponential", filename))
 
 varying_p = ComponentArray(
     population = dataset["varying_p"]["population"],
@@ -98,7 +95,7 @@ nn_output = vec(beta_network(vcat(fill(beta0, 1, length(norm_i_traj)), fill(vary
                 fill(varying_p.delta, 1, length(norm_i_traj)), reshape(norm_i_traj, 1, :)), p_trained, st_nn)[1])
 # Create output directory
 plot_title = "NN approximation no noise"
-sim_name_SR = "UDE_multiple_$(sim_name)_$(filename)"
+sim_name_SR = "UDE_multiple_exponential_$(sim_name)_$(filename)"
 output_dir = joinpath(@__DIR__, "..", "scripts", "outputs", "$(sim_name_SR)")
 
-symbolic_regression_module.symbolic_regression(x_hat, y_hat, sim_name_SR, location, output_dir, plot_title, 1234, "multi", norm_i_traj, nn_output)
+symbolic_regression_module.symbolic_regression(x_hat, y_hat, sim_name_SR, location, output_dir, plot_title, 1234, "multi", norm_i_traj, nn_output, "exponential")

@@ -28,13 +28,6 @@ using .Functions
 DEFINE HYPERPARAMETERS
 =========================================================# 
 
-# Define strings for file names and directory for results
-sim_name ="exponential_080626"
-model_name = "ude_multiple"
-if !isdir(datadir("sims", model_name, sim_name)) 
-	mkpath(datadir("sims", model_name, sim_name))
-end
-
 # Number of data points used for training (total number of entries in the dataset)
 const train_length = 365
 const maxiters = 2500
@@ -86,7 +79,7 @@ ph_nn = ComponentArray(
                 prevalence = 0,
                 beta0 = 0,
                 zeta = 0,
-                r0_reproduction = 0,
+                R0_reproduction = 0,
                 delta = 0
             )
 
@@ -104,7 +97,10 @@ function seird_nn!(du, u, p, t)
     end
 
     # Define normalised inputs for NN
-    nn_input = [p.beta0, p.zeta, p.delta, I / p.population]
+    delta_norm =(log(p.delta) - log(1e-6))/(log(1e-2) - log(1e-6))
+    beta0_norm = (p.R0_reproduction - 1.2)/(6.0 - 1.2)
+    zeta_norm = p.zeta/0.05
+    nn_input = [beta0_norm, zeta_norm, delta_norm, I / p.population]
 
     # Evaluate neural network and extract scalar
     beta = beta_network(nn_input, p.nn_params, st_nn)[1][1]
@@ -124,9 +120,9 @@ PREDICTION AND LOSS FUNCTIONS
 =========================================================# 
 
 # Predict number infectious individuals
-function predict_ude(p_all)
+function predict_ude(p_all, u0)
 
-    prob = remake(prob_ude, p = p_all)
+    prob = remake(prob_ude, p = p_all, u0 = u0)
     sol_ude = solve(prob, Rosenbrock23(), saveat=1.0, dense = false)
 
     # Return nothing if solve failed or didn't reach full timespan
@@ -145,7 +141,7 @@ end
 TRAINING
 =========================================================# 
 
-function train_ude(nn_params; maxiters_adam, maxiters_lfbgs)
+function train_ude(nn_params; maxiters_adam, maxiters_lbfgs)
 
     # Preload all trajectories and store in a vector
     root = datadir("synthetic_trajectories_exponential")
@@ -188,7 +184,7 @@ function train_ude(nn_params; maxiters_adam, maxiters_lfbgs)
         println("Adam iter $iter")
 
         # Compute the loss, predicted infectious individuals and gradient function for each synthetic trajectory
-        total_loss, total_grad = Functions.combined_loss_ude(nn_params, predict_ude, trajectories)
+        total_loss, total_grad = Functions.combined_loss_ude_adam(nn_params, predict_ude, trajectories)
 
     	# Stop training if 5 consecutive Inf losses
 		if total_loss == Inf && length(total_losses) >= 4 && all(isinf, total_losses[end-4:end])
@@ -215,6 +211,44 @@ function train_ude(nn_params; maxiters_adam, maxiters_lfbgs)
 
     end
 
+    # Then do LBFGS optimisation
+    adtype = Optimization.AutoZygote()
+    optfunc   = Optimization.OptimizationFunction(
+                (theta, _) -> Functions.combined_loss_ude_lbfgs(theta, predict_ude, trajectories),
+                adtype)
+    optprob = Optimization.OptimizationProblem(optfunc, best_nn_params)
+
+    iter_lbfgs = Ref(0)
+
+    res = try
+        Optimization.solve(
+        optprob,
+        Optim.LBFGS(m=10),
+        callback = (state, l) -> begin
+            iter_lbfgs[] += 1
+            push!(total_losses, l)
+
+            if l < best_loss
+                best_loss = l
+                best_nn_params = state.u
+            end
+
+            iter_lbfgs[] % 50 == 0 && println("LBFGS iter $(iter_lbfgs[]): $l")
+            return false
+        end,
+        maxiters = maxiters_lbfgs
+        )
+
+    catch e
+        println("LBFGS optimisation failed with error: $e")
+        return best_nn_params, total_losses
+    end
+
+    final_loss = Functions.combined_loss_ude_lbfgs(res.u, predict_ude, trajectories)
+    if final_loss < best_loss
+        best_nn_params = res.u
+    end
+
     return best_nn_params, total_losses
 end
 
@@ -222,14 +256,14 @@ end
 MAIN FUNCTION TO TRAIN THE UDE AND SAVE THE RESULTS
 =========================================================# 
 
-function run_model()
+function run_model(POPULATION, beta_function, maxiters_adam, maxiters_lbfgs)
     println("Starting run: on thread $(Threads.threadid())")
 
     # Initialise parameters
     nn_params, st = Lux.setup(rng, beta_network)
     nn_params = ComponentArray(nn_params)
 
-    p_trained, losses_final = train_ude(nn_params, maxiters_adam = 1, maxiters_lfbgs = 1)
+    p_trained, losses_final = train_ude(nn_params; maxiters_adam, maxiters_lbfgs)
 
     # Save the trained parameters and losses for the combined trajectories
 
@@ -248,72 +282,137 @@ function run_model()
     # Define the root file path
     root = datadir("synthetic_trajectories_exponential")
     # Read all files/folders in the root directory
-    for filename in readdir(root)
-        if endswith(filename, ".jld2")
-            # Extract trajectory of infectious individuals
-            dataset = JLD2.load(datadir("synthetic_trajectories_exponential", filename))
-            data = dataset["infectious"]
-            days = dataset["days"]
+    for location in keys(POPULATION)
+        filename = "synthesised_$(location).jld2"
+        # Extract trajectory of infectious individuals
+        dataset = JLD2.load(datadir("synthetic_trajectories_exponential", filename))
+        data = dataset["infectious"]
+        days = dataset["days"]
 
-            varying_p = ComponentArray(
-                population = dataset["varying_p"]["population"],
-                prevalence = dataset["varying_p"]["prevalence"],
-                delta = dataset["varying_p"]["delta"],
-                R0_reproduction = dataset["varying_p"]["R0_reproduction"],
-                zeta = dataset["varying_p"]["zeta"]
-            )
+        varying_p = ComponentArray(
+            population = dataset["varying_p"]["population"],
+            prevalence = dataset["varying_p"]["prevalence"],
+            delta = dataset["varying_p"]["delta"],
+            R0_reproduction = dataset["varying_p"]["R0_reproduction"],
+            zeta = dataset["varying_p"]["zeta"]
+        )
 
-            # Derive beta0 specific to current trajectory
-            beta0 = varying_p.R0_reproduction * (gamma + varying_p.delta)
+        # Derive beta0 specific to current trajectory
+        beta0 = varying_p.R0_reproduction * (gamma + varying_p.delta)
 
-            # Update the parameters for the current trajectory to include the varying parameters
-            p_all = ComponentArray(
-                nn_params = p_trained,
-                population = varying_p.population,
-                prevalence = varying_p.prevalence,
-                beta0 = beta0,
-                zeta = varying_p.zeta,
-                R0_reproduction = varying_p.R0_reproduction,
-                delta = varying_p.delta
-            )
+        # Update the parameters for the current trajectory to include the varying parameters
+        p_all = ComponentArray(
+            nn_params = p_trained,
+            population = varying_p.population,
+            prevalence = varying_p.prevalence,
+            beta0 = beta0,
+            zeta = varying_p.zeta,
+            R0_reproduction = varying_p.R0_reproduction,
+            delta = varying_p.delta
+        )
 
-            # Define initial state
-            I0 = max(1.0, p_all.prevalence * p_all.population)
-            S0 = p_all.population - E0 - I0 - R0_recovered - D0
-            init_state = [S0, E0, I0, R0_recovered, D0]
+        # Define initial state
+        I0 = max(1.0, p_all.prevalence * p_all.population)
+        S0 = p_all.population - E0 - I0 - R0_recovered - D0
+        init_state = [S0, E0, I0, R0_recovered, D0]
 
-            # Evaluate prediction for the trained parameters on the current trajectory
-            long_term_prob= remake(prob_ude, u0 = init_state, p = p_all)
-            long_term_pred = solve(long_term_prob, Rosenbrock23(), saveat=1, dense = false)
-            
-            # Convert to a 1 x N matrix
-            x_hat = reshape(long_term_pred[3, 1:length(data)], 1, :)
+        # Evaluate prediction for the trained parameters on the current trajectory
+        long_term_prob= remake(prob_ude, u0 = init_state, p = p_all)
+        long_term_pred = solve(long_term_prob, Rosenbrock23(), saveat=1, dense = false)
+        
+        # Convert to a 1 x N matrix
+        x_hat = long_term_pred[3, 1:length(data)]
 
-            # Define the neural network input for the current trajectory 
-            # Keep beta, zeta, delta constant over time
-            nn_input = vcat(fill(p_all.beta0, 1, length(days)), fill(p_all.zeta, 1, length(days)), 
-                fill(p_all.delta, 1, length(days)), reshape(x_hat ./ p_all.population, 1, :))
+        # Define the neural network input for the current trajectory 
+        # Keep beta, zeta, delta constant over time but normalise
+        delta_norm =(log(p_all.delta) - log(1e-6))/(log(1e-2) - log(1e-6))
+        beta0_norm = (p_all.R0_reproduction - 1.2)/(6.0 - 1.2)
+        zeta_norm = p_all.zeta/0.05
 
-            # Evaluate neural network and extract approximation
-            beta_traj = beta_network(nn_input, p_trained, st_nn)[1]
+        nn_input = vcat(fill(beta0_norm, 1, length(days)), fill(zeta_norm, 1, length(days)), 
+            fill(delta_norm, 1, length(days)), reshape(x_hat ./ p_all.population, 1, :))
 
-            # Within this folder create a folder for each trajectory
-            if !isdir(datadir("sims", model_name, sim_name, foldername, filename)) 
-                mkpath(datadir("sims", model_name, sim_name, foldername, filename))
-            end
+        # Evaluate neural network and extract approximation
+        beta_traj = vec(beta_network(nn_input, p_trained, st_nn)[1])
 
-            # In this folder save the infectious trajectory results and the beta results for this trajectory
-            JLD2.save(datadir("sims", model_name, sim_name, foldername, filename, "results.jld2"),
-                "p", p_trained, "losses", losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_traj,
-                "days", days)
+        # Within this folder create a folder for each trajectory
+        if !isdir(datadir("sims", model_name, sim_name, foldername, filename)) 
+            mkpath(datadir("sims", model_name, sim_name, foldername, filename))
         end
+        root = datadir("sims", model_name, sim_name, foldername, filename, "results.jld2")
+        # In this folder save the infectious trajectory results and the beta results for this trajectory
+        JLD2.save(root,
+            "p", p_trained, "losses", losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_traj,
+            "days", days)
+    
+        #========================
+        CREATE PLOTS
+        ========================#
+
+        plot_dir = dirname(root)
+
+        # Create trajectory plot
+        traj_plot = plot(days[1:length(data)], data[1:length(data)], color=:black, markersize=2, label="Data", 
+        xlabel="Day", ylabel="Infectious individuals", title="Infectious trajectory for $(sim_name) $(location)", legend=:topright)
+        plot!(traj_plot, days[1:length(data)], x_hat, color=:red, linewidth=2, label="Predicted trajectory")
+
+        # Save the plot
+        savefig(traj_plot, joinpath(plot_dir, "traj_plot.png"))
+
+        # Create beta plot
+
+        # Define beta function
+        I_grid = collect(range(0, 1; length=1000))
+        if beta_function == "exponential"
+            true_beta = Functions.beta_exp(location, data),:,1
+            true_beta_against_xhat = Functions.beta_exp(location, I_grid*p_all.population)
+        elseif beta_function == "rational"
+            true_beta = Functions.beta_rational(location, data),:,1
+            true_beta_against_xhat = Functions.beta_rational(location, I_grid*p_all.population)
+        end
+
+        beta_plot = plot(days[1:length(beta_traj)], true_beta, color=:blue, linewidth=2, label="True beta", 
+        xlabel="Day", ylabel="Beta", title="Beta trajectory for $(sim_name) $(location)", legend=:topright)
+        plot!(beta_plot, days[1:length(beta_traj)], beta_traj, color=:red, linewidth=2, label="Predicted beta")
+
+        # Save the plot
+        savefig(beta_plot, joinpath(plot_dir, "beta_plot.png"))
+
+        # Save the plot
+        savefig(traj_plot, joinpath(plot_dir, "traj_plot.png"))
+
+        # Create beta plot against x_hat
+        
+        # Evaluate neural network and extract approximation
+        y_hat_input = vcat(fill(beta0_norm, 1, 1000), fill(zeta_norm, 1, 1000), 
+            fill(delta_norm, 1, 1000), reshape(I_grid, 1, :))
+
+        y_hat = vec(beta_network(y_hat_input, p_trained, st_nn)[1])
+        
+        beta_against_xhat_plot = plot(I_grid, true_beta_against_xhat, color=:blue, linewidth=2, label="True beta", 
+        xlabel="Day", ylabel="Beta", title="Beta trajectory for $(sim_name) $(location)", legend=:topright)
+        plot!(beta_against_xhat_plot, I_grid, y_hat, color=:red, linewidth=2, label="Predicted beta")
+
+        # Save the plot
+        savefig(beta_against_xhat_plot, joinpath(plot_dir, "beta_against_xhat_plot.png"))
+
     end
     println("Finished run: $(foldername) on thread $(Threads.threadid())")
 	return nothing
 end
 
+include("estimated_ground_truth_parameters.jl")
+using .EstimatedGroundTruthParameters: POPULATION
+
+# Define strings for file names and directory for results
+sim_name ="exponential_normalised_inputs_090626"
+model_name = "ude_multiple"
+if !isdir(datadir("sims", model_name, sim_name)) 
+	mkpath(datadir("sims", model_name, sim_name))
+end
+
 for i = 1:1
-    run_model()
+    run_model(POPULATION, "exponential", 2500, 0)
 end
 
 
