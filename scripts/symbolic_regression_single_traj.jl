@@ -47,7 +47,7 @@ p_nn_temp, st_nn = Lux.setup(rng, beta_network)
 RETRIEVE PREDICTIONS AND PARAMETERS FROM THE BEST SIMULATION
 =============================================================#
 
-sim_name = "270526_add_regularisation_and_lfbgs"
+sim_name = "exponential_beta_single_traj"
 location = "MA"
 population = POPULATION[location]
 
@@ -66,7 +66,7 @@ days = best_results["days"]
 
 # Extract NN approximation (x_hat normalised in SR module)
 norm_i_traj = I_nn ./ population
-#x_hat = reshape(I_nn, :, 1) 
+
 x_grid = collect(range(0, 1; length=1000))
 nn_input = reshape(x_grid, 1, :)
 x_hat = reshape(x_grid, :, 1)
@@ -78,8 +78,8 @@ nn_output = vec(beta_network(norm_i_traj, p_trained.nn_params, st_nn)[1])
 # Create output directory
 plot_title = "NN approximation no noise"
 sim_name_SR = "UDE_$(sim_name)"
-output_dir = joinpath(@__DIR__, "..", "scripts", "outputs", "$(sim_name_SR)_testing_080626")
+output_dir = joinpath(@__DIR__, "..", "scripts", "outputs", "$(sim_name_SR)")
 
-symbolic_regression_module.symbolic_regression(x_hat, y_hat, sim_name_SR, location, output_dir, plot_title, 1234, "single", norm_i_traj, nn_output)
+symbolic_regression_module.symbolic_regression(x_hat, y_hat, sim_name_SR, location, output_dir, plot_title, 1234, "single", norm_i_traj, nn_output, "exponential")
 
 

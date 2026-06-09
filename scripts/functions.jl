@@ -20,12 +20,12 @@ using Zygote
 using Optimization
 
 # Loss function using MSE
-function loss_ude(p_all, predict_ude, data)
-    pred = predict_ude(p_all)
+function loss_ude(p_all, predict_ude, data, u0)
+    pred = predict_ude(p_all, u0)
 
     if isnothing(pred)
         println("ODE solve failed")
-        return Inf, nothing
+        return 1e20
     end
 
     # Align lengths
@@ -39,13 +39,14 @@ function loss_ude(p_all, predict_ude, data)
     # L2 penalty on NN weights (regularisation)
     l2_penalty = 1e-4 * sum(abs2, p_all.nn_params)
 
-    return mse + l2_penalty, pred
+    return mse + l2_penalty
 end
 
-function combined_loss_ude(nn_params, predict_ude, trajectories)
+function combined_loss_ude_adam(nn_params, predict_ude, trajectories)
     
     gamma = 1/10
     println("Evaluating combined loss for current parameters across $(length(trajectories)) trajectories...")
+
     # Loop through all simulations
     individual_losses = Float64[]
     total_grad = zero(nn_params)
@@ -65,23 +66,115 @@ function combined_loss_ude(nn_params, predict_ude, trajectories)
             prevalence = varying_p.prevalence,
             beta0 = beta0,
             zeta = varying_p.zeta,
-            r0_reproduction = varying_p.R0_reproduction,
+            R0_reproduction = varying_p.R0_reproduction,
             delta = varying_p.delta
         )
+
+        # Define initial state for the current trajectory
+        E0 = 1.0
+        R0_recovered = 0.0
+        D0 = 0.0
+        I0 = max(1.0, varying_p.prevalence * varying_p.population)
+        S0 = varying_p.population - E0 - I0 - R0_recovered - D0
+        u0 = [S0, E0, I0, R0_recovered, D0]
+
         println("Evaluating trajectory $i")
+
         # Compute the loss and gradient for the current trajectory
-        (l, pred), back_all = pullback(theta -> Functions.loss_ude(theta, predict_ude, data), p_all)
+        l, back_all = pullback(theta -> Functions.loss_ude(theta, predict_ude, data, u0), p_all)
+
+        if !isfinite(l)
+            return 1e20, nothing
+        end
 
         # Evaluate the gradient of the loss for the current trajectory w.r.t p_all
-        grad = back_all((one(l), nothing))[1]
+        grad = back_all((one(l)))[1]
+
+        if isnothing(grad) || isnothing(grad.nn_params)
+            return total_loss + l, nothing
+        end
+
         println("Loss for trajectory $i: $l")
         push!(individual_losses, l)
 
-        total_loss = sum(individual_losses)
+        total_loss += l
         total_grad .+= grad.nn_params
 
     end
     return total_loss, total_grad
+end
+
+function combined_loss_ude_lbfgs(nn_params, predict_ude, trajectories)
+    
+    gamma = 1/10
+    println("Evaluating combined loss for current parameters across $(length(trajectories)) trajectories...")
+
+    total_loss = 0.0
+
+    for (i, traj) in enumerate(trajectories)
+        println(i)
+        data = traj.data
+        varying_p = traj.varying_p
+
+        # Derive beta0 specific to current trajectory
+        beta0 = varying_p.R0_reproduction * (gamma + varying_p.delta)
+
+        # Update the parameters for the current trajectory to include the varying parameters
+        p_all = ComponentArray(
+            nn_params = nn_params,
+            population = varying_p.population,
+            prevalence = varying_p.prevalence,
+            beta0 = beta0,
+            zeta = varying_p.zeta,
+            R0_reproduction = varying_p.R0_reproduction,
+            delta = varying_p.delta
+        )
+
+        # Define initial state for the current trajectory
+        E0 = 1.0
+        R0_recovered = 0.0
+        D0 = 0.0
+        I0 = max(1.0, varying_p.prevalence * varying_p.population)
+        S0 = varying_p.population - E0 - I0 - R0_recovered - D0
+        u0 = [S0, E0, I0, R0_recovered, D0]
+
+        println("Evaluating trajectory $i")
+
+        # Check the ODE is solvable and ignore if not
+        pred_check = Zygote.ignore() do
+            predict_ude(p_all, u0)
+        end
+
+
+        if isnothing(pred_check)
+            total_loss += 1e20
+            continue
+        end
+
+
+        # Compute the loss for the current trajectory
+        pred = predict_ude(p_all, u0)
+
+        # Align lengths
+        n = min(length(pred), length(data))
+        pred = pred[1:n]
+        data = data[1:n]
+
+        # Mean squared error
+        mse = sum((pred .- data).^2)/length(data)
+
+        # L2 penalty on NN weights (regularisation)
+        l2_penalty = 1e-4 * sum(abs2, p_all.nn_params)
+
+        l = mse + l2_penalty
+
+        println("Loss for trajectory $i: $l")
+
+        total_loss += ifelse(isfinite(l), l, 1e20)
+
+    end
+
+    return total_loss
 end
 
 # Loss function using MSE for evaluation of performance

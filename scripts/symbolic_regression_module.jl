@@ -24,7 +24,7 @@ using DataFrames
 
 
 
-function symbolic_regression(x_hat, y_hat, sim_name, location, output_dir, plot_title, seed, sing_or_multi, norm_i_traj, nn_output)
+function symbolic_regression(x_hat, y_hat, sim_name, location, output_dir, plot_title, seed, sing_or_multi, norm_i_traj, nn_output, beta_function)
     
     # Recover true beta result
     population = POPULATION[location]
@@ -33,7 +33,7 @@ function symbolic_regression(x_hat, y_hat, sim_name, location, output_dir, plot_
     #x_hat = x_hat./ population
 
     model = SRRegressor(
-        niterations=10,
+        niterations=800,
         binary_operators=[+, -, *, /],
         unary_operators=[exp],
         maxsize = 20,
@@ -93,8 +93,11 @@ function symbolic_regression(x_hat, y_hat, sim_name, location, output_dir, plot_
                             delta = fill(x_hat.delta[1], length(norm_i_traj))
     )
     end
-
-    true_beta_days_traj = reshape(Functions.beta_exp(location, norm_i_traj.*population),:,1)
+    if beta_function == "exponential"
+        true_beta_days_traj = reshape(Functions.beta_exp(location, norm_i_traj.*population),:,1)
+    elseif beta_function == "rational"
+        true_beta_days_traj = reshape(Functions.beta_rational(location, norm_i_traj.*population),:,1)
+    end
     SR_beta_days_traj = reshape(predict(mach, (data=SR_beta_true_traj, idx=r.best_idx)),:,1)
     target_beta_days = reshape(nn_output, :, 1)
 
@@ -146,11 +149,21 @@ function symbolic_regression(x_hat, y_hat, sim_name, location, output_dir, plot_
 
     # Plot beta vs x_hat
     if sing_or_multi == "single"
-        true_beta_SR = Functions.beta_exp(location, x_hat.*population)
-        x_hat_I = x_hat
+        if beta_function == "exponential"
+            true_beta_SR = Functions.beta_exp(location, x_hat.*population)
+            x_hat_I = x_hat
+        elseif beta_function == "rational"
+            true_beta_SR = Functions.beta_rational(location, x_hat.*population)
+            x_hat_I = x_hat
+        end
     elseif sing_or_multi == "multi"
-        true_beta_SR = Functions.beta_exp(location, x_hat.I.*population)
-        x_hat_I = x_hat.I
+        if beta_function == "exponential"
+            true_beta_SR = Functions.beta_exp(location, x_hat.I.*population)
+            x_hat_I = x_hat.I
+        elseif beta_function == "rational"
+            true_beta_SR = Functions.beta_rational(location, x_hat.I.*population)
+            x_hat_I = x_hat.I
+        end
     end
 
     x_hat_vs_beta = plot(x_hat_I, true_beta_SR, lw=2.5, label="True β", color=:black)
