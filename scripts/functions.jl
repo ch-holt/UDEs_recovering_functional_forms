@@ -151,22 +151,11 @@ function combined_loss_ude_lbfgs(nn_params, predict_ude, trajectories)
             continue
         end
 
-
-        # Compute the loss for the current trajectory
-        pred = predict_ude(p_all, u0)
-
-        # Align lengths
-        n = min(length(pred), length(data))
-        pred = pred[1:n]
-        data = data[1:n]
-
-        # Mean squared error
-        mse = sum((pred .- data).^2)/length(data)
-
-        # L2 penalty on NN weights (regularisation)
-        l2_penalty = 1e-4 * sum(abs2, p_all.nn_params)
-
-        l = mse + l2_penalty
+        l = Functions.loss_ude(p_all, predict_ude, data, u0)
+        if !isfinite(l) || l >= 1e20
+            total_loss += 1e20
+            continue
+        end
 
         println("Loss for trajectory $i: $l")
 
@@ -192,19 +181,22 @@ function beta_exp(location, obs)
     delta = DELTA[location]
     R0_reproduction = R0_REPRODUCTION[location]
     zeta = ZETA[location]
+    population = POPULATION[location]
 
     # Derive other parameters
     # Infectious period of 10 days represented by recovery rate gamma
     gamma = 1/10
     beta0 = R0_reproduction * (gamma + delta)
 
+
     true_beta = beta0 .* exp.(-zeta .* delta .* obs)
+
 
     return true_beta
 
 end 
 
-function beta_rational(location, obs)
+function beta_rational(location, obs; normalised)
     
     delta = DELTA[location]
     R0_reproduction = R0_REPRODUCTION[location]
@@ -214,8 +206,18 @@ function beta_rational(location, obs)
     # Infectious period of 10 days represented by recovery rate gamma
     gamma = 1/10
     beta0 = R0_reproduction * (gamma + delta)
+    if normalised == true
 
-    true_beta = beta0 ./ (1 .+ zeta .* delta .* obs)
+        # Normalise the parameters for the symbolic regression
+        delta_norm =(log(delta) - log(1e-6))/(log(1e-2) - log(1e-6))
+        beta0_norm = (R0_reproduction- 1.2)/(6.0 - 1.2)
+        zeta_norm = zeta/0.05
+
+        true_beta = beta0_norm ./ (1 .+ zeta_norm .* delta_norm .* obs)
+
+    elseif normalised == false
+        true_beta = beta0 ./ (1 .+ zeta .* delta .* obs)
+    end
 
     return true_beta
 
@@ -276,4 +278,3 @@ function _format_equation_sigfigs(equation_text::AbstractString)
 end
 
 end
-

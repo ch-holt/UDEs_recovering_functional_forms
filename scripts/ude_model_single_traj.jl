@@ -27,12 +27,7 @@ using .Functions
 DEFINE HYPERPARAMETERS
 =========================================================#
 
-# Define strings for file names and directory for results
-sim_name ="exponential_beta_single_traj"
-model_name = "ude_single"
-if !isdir(datadir("sims", model_name, sim_name)) 
-	mkpath(datadir("sims", model_name, sim_name))
-end
+
 
 # Number of data points used for training (total number of entries in the dataset)
 const train_length = 365
@@ -46,7 +41,7 @@ n_sims = 50
 LOAD DATA
 =========================================================#
 
-dataset = JLD2.load(datadir("synthetic_trajectories_exponential", "synthesised_MA.jld2"))
+dataset = JLD2.load(datadir("synthetic_trajectories_rational", "synthesised_MA.jld2"))
 
 # Extract infectious individuals and days from the dataset
 data = dataset["infectious"]
@@ -97,7 +92,7 @@ tspan = [1, train_length]
 # We have two hidden layers with hidden_dims neurons and gelu activation function
 # We are taking normalised I(t) as an input and outputting beta(t)
 beta_network = Lux.Chain(Lux.Dense(1=>hidden_dims, gelu), Lux.Dense(hidden_dims=>hidden_dims, gelu),
-                         Lux.Dense(hidden_dims=>1, softplus))
+                         Lux.Dense(hidden_dims=>1, sigmoid))
 
 # Initialise parameters to build the structure for the UDE
 p_nn_temp, st_nn = Lux.setup(rng, beta_network)
@@ -171,7 +166,7 @@ TRAINING
 =========================================================# 
 
 
-function train_ude(p; maxiters_adam, maxiters_lfbgs)
+function train_ude(p; maxiters_adam, maxiters_lbfgs)
 
     # Set up optimisation (first Adam then LBFGS)
     optimised_state = Optimisers.setup(Optimisers.Adam(1e-3), p)
@@ -182,6 +177,7 @@ function train_ude(p; maxiters_adam, maxiters_lfbgs)
     best_p = p
 
     for iter in 1:maxiters_adam
+
         # Compute the loss, predicted mortalities and gradient function
         l, back_all = pullback(theta -> Functions.loss_ude(theta, predict_ude, data, u0), p)
         println("Iteration $iter, Loss: $l")
@@ -236,7 +232,7 @@ function train_ude(p; maxiters_adam, maxiters_lfbgs)
             iter_lbfgs[] % 50 == 0 && println("LBFGS iter $(iter_lbfgs[]): $l")
             return false
         end,
-        maxiters = maxiters_lfbgs
+        maxiters = maxiters_lbfgs
     )
 
     final_loss = Functions.loss_ude(res.u, predict_ude, data, u0)
@@ -251,7 +247,7 @@ end
 MAIN FUNCTION TO TRAIN THE UDE AND SAVE THE RESULTS
 =========================================================# 
 
-function run_model()
+function run_model(maxiters_adam, maxiters_lbfgs)
     println("Starting run: on thread $(Threads.threadid())")
 
     # Initialise parameters
@@ -271,7 +267,7 @@ function run_model()
     l_init = Functions.loss_ude(p_init, predict_ude, data, u0)
     println("Initial loss: $l_init")
 
-    p_trained, losses_final = train_ude(p_init, maxiters_adam = 2500, maxiters_lfbgs = 2000)
+    p_trained, losses_final = train_ude(p_init; maxiters_adam, maxiters_lbfgs)
 
     # Evaluate final long term results 
     long_term_prob= remake(prob_ude, p = p_trained, tspan = (1.0, 3*365.0), u0 = u0)
@@ -303,6 +299,13 @@ function run_model()
 	return nothing
 end
 
-for i = 1:n_sims
-    run_model()
+
+# Define strings for file names and directory for results
+sim_name ="rational_beta_single_traj"
+model_name = "ude_single"
+if !isdir(datadir("sims", model_name, sim_name)) 
+	mkpath(datadir("sims", model_name, sim_name))
+end
+for i = 1:1
+    run_model(2500, 2000)
 end

@@ -56,13 +56,13 @@ SET UP MODEL
 =========================================================#
 
 # Define the timespan for the ODE solver
-tspan = [0, train_length]
+tspan = [1, train_length]
 
 # Create neural network to estimate the transmission rate:
 # We have two hidden layers with hidden_dims neurons and gelu activation function
 # We are taking beta0, zeta, dleta, I(t) and t as inputs and outputting beta(t)
 beta_network = Lux.Chain(Lux.Dense(4=>hidden_dims, gelu), Lux.Dense(hidden_dims=>hidden_dims, gelu),
-                         Lux.Dense(hidden_dims=>1, softplus))
+                         Lux.Dense(hidden_dims=>1, sigmoid))
 
 # Initialise placeholder parameters to build the structure for the UDE
 p_nn_temp, st_nn = Lux.setup(rng, beta_network)
@@ -141,29 +141,29 @@ end
 TRAINING
 =========================================================# 
 
-function train_ude(nn_params; maxiters_adam, maxiters_lbfgs)
+function train_ude(locations, nn_params, maxiters_adam, maxiters_lbfgs)
 
     # Preload all trajectories and store in a vector
     root = datadir("synthetic_trajectories_exponential")
     trajectories = []
-    for filename in readdir(root)
-        if endswith(filename, ".jld2")
-            dataset = JLD2.load(joinpath(root, filename))
-            varying_p = ComponentArray(
-                population = dataset["varying_p"]["population"],
-                prevalence = dataset["varying_p"]["prevalence"],
-                delta = dataset["varying_p"]["delta"],
-                R0_reproduction = dataset["varying_p"]["R0_reproduction"],
-                zeta = dataset["varying_p"]["zeta"]
-            )
+    for location in locations
+        filename = "synthesised_$(location).jld2"
+        dataset = JLD2.load(joinpath(root, filename))
+        varying_p = ComponentArray(
+            population = dataset["varying_p"]["population"],
+            prevalence = dataset["varying_p"]["prevalence"],
+            delta = dataset["varying_p"]["delta"],
+            R0_reproduction = dataset["varying_p"]["R0_reproduction"],
+            zeta = dataset["varying_p"]["zeta"]
+        )
 
-            push!(trajectories, (
-                filename = filename,
-                data = dataset["infectious"],
-                days = dataset["days"],
-                varying_p = varying_p
-            ))
-        end
+        push!(trajectories, (
+            filename = filename,
+            data = dataset["infectious"],
+            days = dataset["days"],
+            varying_p = varying_p
+        ))
+
     end
     println("Loaded $(length(trajectories)) trajectories into memory")
 
@@ -256,14 +256,14 @@ end
 MAIN FUNCTION TO TRAIN THE UDE AND SAVE THE RESULTS
 =========================================================# 
 
-function run_model(POPULATION, beta_function, maxiters_adam, maxiters_lbfgs)
+function run_model(locations, beta_function, maxiters_adam, maxiters_lbfgs)
     println("Starting run: on thread $(Threads.threadid())")
 
     # Initialise parameters
     nn_params, st = Lux.setup(rng, beta_network)
     nn_params = ComponentArray(nn_params)
 
-    p_trained, losses_final = train_ude(nn_params; maxiters_adam, maxiters_lbfgs)
+    p_trained, losses_final = train_ude(locations, nn_params, maxiters_adam, maxiters_lbfgs)
 
     # Save the trained parameters and losses for the combined trajectories
 
@@ -282,7 +282,7 @@ function run_model(POPULATION, beta_function, maxiters_adam, maxiters_lbfgs)
     # Define the root file path
     root = datadir("synthetic_trajectories_exponential")
     # Read all files/folders in the root directory
-    for location in keys(POPULATION)
+    for location in locations
         filename = "synthesised_$(location).jld2"
         # Extract trajectory of infectious individuals
         dataset = JLD2.load(datadir("synthetic_trajectories_exponential", filename))
@@ -364,10 +364,10 @@ function run_model(POPULATION, beta_function, maxiters_adam, maxiters_lbfgs)
         # Define beta function
         I_grid = collect(range(0, 1; length=1000))
         if beta_function == "exponential"
-            true_beta = Functions.beta_exp(location, data),:,1
+            true_beta = Functions.beta_exp(location, data)
             true_beta_against_xhat = Functions.beta_exp(location, I_grid*p_all.population)
         elseif beta_function == "rational"
-            true_beta = Functions.beta_rational(location, data),:,1
+            true_beta = Functions.beta_rational(location, data)
             true_beta_against_xhat = Functions.beta_rational(location, I_grid*p_all.population)
         end
 
@@ -401,18 +401,15 @@ function run_model(POPULATION, beta_function, maxiters_adam, maxiters_lbfgs)
 	return nothing
 end
 
-include("estimated_ground_truth_parameters.jl")
-using .EstimatedGroundTruthParameters: POPULATION
-
 # Define strings for file names and directory for results
-sim_name ="exponential_normalised_inputs_090626"
+sim_name ="exponential_only_MA_090626"
 model_name = "ude_multiple"
 if !isdir(datadir("sims", model_name, sim_name)) 
 	mkpath(datadir("sims", model_name, sim_name))
 end
 
 for i = 1:1
-    run_model(POPULATION, "exponential", 2500, 0)
+    run_model(["MA"], "exponential", 2500, 0)
 end
 
 
