@@ -77,7 +77,7 @@ nn_output = vec(beta_network(norm_i_traj, p_trained.nn_params, st_nn)[1])
 
 # Create output directory
 plot_title = "NN approximation no noise"
-sim_name_SR = "UDE_$(sim_name)"
+sim_name_SR = "UDE_$(sim_name)_softplus_v4"
 output_dir = joinpath(@__DIR__, "..", "scripts", "outputs", "$(sim_name_SR)")
 
 symbolic_regression_module.symbolic_regression(x_hat, y_hat, sim_name_SR, location, output_dir, plot_title, 1234, "single", norm_i_traj, nn_output, "exponential")

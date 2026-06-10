@@ -81,7 +81,7 @@ function plot_simulation(sim_name, plot_title)
     display(pl)
 
     # Save the plot
-    savefig(pl, datadir("sims", "ude_single", sim_name, "prediction_plotv2.png"))
+    savefig(pl, datadir("sims", "ude_single", sim_name, "prediction_plotv3.png"))
 
     return pl
 
@@ -136,10 +136,10 @@ function plot_individual_traj(sim_num, sim_name, synthesised_data, beta_function
     # Define beta function
     if beta_function == "exponential"
         true_beta = reshape(Functions.beta_exp(location, obs),:,1)
-        true_beta_against_xhat = reshape(Functions.beta_exp(location, I_grid*population),:,1)
+        true_beta_against_xhat = reshape(Functions.beta_exp(location, I_grid*varying_p.population),:,1)
     elseif beta_function == "rational"
         true_beta = reshape(Functions.beta_rational(location, obs),:,1)
-        true_beta_against_xhat = reshape(Functions.beta_rational(location, I_grid*population),:,1)
+        true_beta_against_xhat = reshape(Functions.beta_rational(location, I_grid*varying_p.population),:,1)
     end
 
     
@@ -161,13 +161,13 @@ function plot_individual_traj(sim_num, sim_name, synthesised_data, beta_function
     # Save the plot
     savefig(beta_plot, joinpath(plot_dir, "beta_plot.png"))
 
-    # Save the plot
-    savefig(traj_plot, joinpath(plot_dir, "traj_plot.png"))
-
     # Create beta plot against x_hat
+    delta_norm =(log(p_all.delta) - log(1e-6))/(log(1e-2) - log(1e-6))
+    beta0_norm = (p_all.R0_reproduction - 1.2)/(6.0 - 1.2)
+    zeta_norm = p_all.zeta/0.05
 
-    nn_input = vcat(fill(beta0, 1, 1000), fill(varying_p.zeta, 1, 1000), 
-        fill(varying_p.delta, 1, 1000), reshape(I_grid, 1, :))
+    nn_input = vcat(fill(beta0_norm, 1, 1000), fill(zeta_norm, 1, 1000), 
+        fill(delta_norm, 1, 1000), reshape(I_grid, 1, :))
 
     # Retrieve NN parameters that resulted in the lowest error on the training data
     training_results = JLD2.load(DrWatson.datadir("sims", "ude_multiple", sim_name, sim_num, "training_results.jld2"))
