@@ -137,8 +137,8 @@ for filename in readdir(root)
         pred = SR_results["prediction"]
         # Extract the predicted infectious trajectory for the training data
         i_traj = pred[3, 1:length(obs)]
-        mse = Functions.loss_mse(i_traj, obs)
-        push!(results_list, (mse=mse, fname=filename, i_traj=i_traj))
+        nmse = Functions.loss_nmse(i_traj, obs, population)
+        push!(results_list, (nmse=nmse, fname=filename, i_traj=i_traj))
     end
 end
 
@@ -262,12 +262,12 @@ plot!(p1, pred_sindy.t, pred_sindy[3, :], label="SINDY prediction", lw=2, ls=:da
 xlabel!(p1, "Day")
 ylabel!(p1, "Daily deaths")
 title!(p1, "SINDY approximation of daily deaths")
-mse_sindy = Functions.loss_mse(pred_sindy[3, :], obs)
-mse_nn = Functions.loss_mse(vec(x_hat), obs)
+nmse_sindy = Functions.loss_nmse(pred_sindy[3, :], obs, population)
+nmse_nn = Functions.loss_nmse(vec(x_hat), obs, population)
 x_ann = days[end]
 y_top = maximum(obs)
-annotate!(p1, x_ann, y_top * 0.70, text("MSE SINDY: $(round(mse_sindy, digits=4))", 9, :right))
-annotate!(p1, x_ann, y_top * 0.62, text("MSE NN: $(round(mse_nn, digits=9))", 9, :right))
+annotate!(p1, x_ann, y_top * 0.70, text("NMSE SINDY: $(round(nmse_sindy, digits=4))", 9, :right))
+annotate!(p1, x_ann, y_top * 0.62, text("NMSE NN: $(round(nmse_nn, digits=4))", 9, :right))
 
 # Plot the beta trajectories evaluated against their respective predicted/observed trajectories
 p2 = plot(days, beta_true, label="True β from true ODE I(t)", lw=2)
@@ -292,9 +292,9 @@ savefig(pl, joinpath(@__DIR__, "figures", "$(sim_name)_sindy_trajectory.png"))
 
 display(pl)
 
-# Evaluate MSE using the median
-mse = Functions.loss_mse(vec(y_hat), beta_true)
-println(Functions.loss_mse(vec(y_hat), beta_true))
+# Evaluate NMSE using the median
+nmse = Functions.loss_nmse(vec(y_hat), beta_true, maximum(beta_true)-minimum(beta_true))
+println(Functions.loss_nmse(vec(y_hat), beta_true, maximum(beta_true)-minimum(beta_true)))
 
 p_beta = plot(days, beta_true, label = "True β", lw = 2)
 plot!(p_beta, days, vec(y_hat), label = "Learned β", lw = 2, ls = :dash)

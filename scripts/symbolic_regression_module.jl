@@ -43,7 +43,7 @@ function symbolic_regression(SR_input_pair, SR_output_pair, sim_name, location, 
         #populations = 15,
         population_size = 50,
         parsimony = 0.01,
-        complexity_of_constants = 2,
+        complexity_of_constants = 5,
         parallelism=:serial,
         seed = seed,
         deterministic = true,
@@ -112,9 +112,9 @@ function symbolic_regression(SR_input_pair, SR_output_pair, sim_name, location, 
     # Evaluate the SR output pair for number of days (e.g. the nn output for the true trajectory)
     target_beta_days = reshape(nn_output_days, :, 1)
 
-    mse_SR_true_days = Functions.loss_mse(SR_evaluated_beta_days, true_beta_days_traj)
-    mse_SR_input_days = Functions.loss_mse(SR_evaluated_beta_days, target_beta_days)
-    mse_input_true_days = Functions.loss_mse(target_beta_days, true_beta_days_traj)
+    nmse_SR_true_days = Functions.loss_nmse(SR_evaluated_beta_days, true_beta_days_traj, maximum(true_beta_days_traj)-minimum(true_beta_days_traj))
+    nmse_SR_input_days = Functions.loss_nmse(SR_evaluated_beta_days, target_beta_days, maximum(true_beta_days_traj)-minimum(true_beta_days_traj))
+    nmse_input_true_days = Functions.loss_nmse(target_beta_days, true_beta_days_traj, maximum(true_beta_days_traj)-minimum(true_beta_days_traj))
 
     p_comparison = plot(days, true_beta_days_traj[1:length(days)], lw=2.5, label="True β", color=:black)
     
@@ -129,13 +129,12 @@ function symbolic_regression(SR_input_pair, SR_output_pair, sim_name, location, 
     x_ann = days[end] * 0.75
     y_ann = maximum(target_beta_days) * 0.85
     dy = maximum(target_beta_days) * 0.06
-    annotate!(p_comparison, x_ann, y_ann, text("MSE (input vs SR) = $(round(mse_SR_input_days, sigdigits=3))", 9))
-    annotate!(p_comparison, x_ann, y_ann - dy, text("MSE (SR vs true) = $(round(mse_SR_true_days, sigdigits=3))", 9))
-    annotate!(p_comparison, x_ann, y_ann - 2*dy, text("MSE (input vs true) = $(round(mse_input_true_days, sigdigits=3))", 9))
-
+    annotate!(p_comparison, x_ann, y_ann, text("NMSE (input vs SR) = $(round(nmse_SR_input_days, sigdigits=3))", 9))
+    annotate!(p_comparison, x_ann, y_ann - dy, text("NMSE (SR vs true) = $(round(nmse_SR_true_days, sigdigits=3))", 9))
+    annotate!(p_comparison, x_ann, y_ann - 2*dy, text("NMSE (input vs true) = $(round(nmse_input_true_days, sigdigits=3))", 9))
     savefig(p_comparison, joinpath(output_dir, "$(sim_name)_SR_beta_vs_true.png"))
 
-    # Plot complexity against MSE
+    # Plot complexity against NMSE
     complexities = r.complexities
     losses = r.losses
     log_losses = log10.(losses)
@@ -177,10 +176,10 @@ function symbolic_regression(SR_input_pair, SR_output_pair, sim_name, location, 
         end
     end
 
-    mse_SR_true = Functions.loss_mse(SR_evaluated_beta_1000, true_beta_1000)
-    mse_SR_input = Functions.loss_mse(SR_evaluated_beta_1000, SR_target_beta_1000)
-    mse_input_true = Functions.loss_mse(SR_target_beta_1000, true_beta_1000)
-    
+    nmse_SR_true = Functions.loss_nmse(SR_evaluated_beta_1000, true_beta_1000, maximum(true_beta_1000)-minimum(true_beta_1000))
+    nmse_SR_input = Functions.loss_nmse(SR_evaluated_beta_1000, SR_target_beta_1000, maximum(true_beta_1000)-minimum(true_beta_1000))
+    nmse_input_true = Functions.loss_nmse(SR_target_beta_1000, true_beta_1000, maximum(true_beta_1000)-minimum(true_beta_1000))
+
     x_hat_vs_beta = plot(SR_input_pair_infectious_1000, true_beta_1000, lw=2.5, label="True β", color=:black)
 
 
@@ -195,9 +194,9 @@ function symbolic_regression(SR_input_pair, SR_output_pair, sim_name, location, 
     x_ann = maximum(SR_input_pair_infectious_1000) * 0.75
     y_ann = maximum(SR_target_beta_1000) * 0.85
     dy = maximum(SR_target_beta_1000) * 0.06
-    annotate!(x_hat_vs_beta, x_ann, y_ann, text("MSE (input vs SR) = $(round(mse_SR_input, sigdigits=3))", 9))
-    annotate!(x_hat_vs_beta, x_ann, y_ann - dy, text("MSE (SR vs true) = $(round(mse_SR_true, sigdigits=3))", 9))
-    annotate!(x_hat_vs_beta, x_ann, y_ann - 2*dy, text("MSE (input vs true) = $(round(mse_input_true, sigdigits=3))", 9))
+    annotate!(x_hat_vs_beta, x_ann, y_ann, text("NMSE (input vs SR) = $(round(nmse_SR_input, sigdigits=3))", 9))
+    annotate!(x_hat_vs_beta, x_ann, y_ann - dy, text("NMSE (SR vs true) = $(round(nmse_SR_true, sigdigits=3))", 9))
+    annotate!(x_hat_vs_beta, x_ann, y_ann - 2*dy, text("NMSE (input vs true) = $(round(nmse_input_true, sigdigits=3))", 9))
     savefig(x_hat_vs_beta, joinpath(output_dir, "$(sim_name)_SR_beta_against_x_hat.png"))
 
     # Plot differences against days

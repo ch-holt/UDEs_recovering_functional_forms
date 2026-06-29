@@ -64,11 +64,11 @@ function plot_simulation(sim_name, plot_title)
     upper_quantile = [quantile(view(prediction_matrix, :, j), 0.75) for j in axes(prediction_matrix, 2)]
     lower_quantile = [quantile(view(prediction_matrix, :, j), 0.25) for j in axes(prediction_matrix, 2)]
 
-    # Evaluate MSE using the median
-    mse = Functions.loss_mse(median_prediction, obs)
+    # Evaluate NMSE using the median
+    nmse = Functions.loss_nmse(median_prediction, obs, POPULATION[location])
 
     # Save to a JLD2 file
-    save(datadir("sims", "ude_single", sim_name, "summary.jld2"), "median_prediction", median_prediction, "upper_quantile", upper_quantile, "lower_quantile", lower_quantile, "mse", mse)
+    save(datadir("sims", "ude_single", sim_name, "summary.jld2"), "median_prediction", median_prediction, "upper_quantile", upper_quantile, "lower_quantile", lower_quantile, "nmse", nmse)
 
     # Create plot
     x = days[1:length(prediction_matrix[1, :])]

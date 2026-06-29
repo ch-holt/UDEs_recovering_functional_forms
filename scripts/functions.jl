@@ -5,7 +5,7 @@ MODULE CONTAINING FUNCTIONS USED MULTIPLE TIMES IN THE PROJECT
 module Functions
 
 export loss_ude
-export loss_mse
+export loss_nmse
 export beta_exp
 export beta_rational
 export extract_best_ude
@@ -19,7 +19,7 @@ using ComponentArrays
 using Zygote
 using Optimization
 
-# Loss function using MSE
+# Loss function using NMSE
 function loss_ude(p_all, predict_ude, data, u0)
     pred = predict_ude(p_all, u0)
 
@@ -30,16 +30,16 @@ function loss_ude(p_all, predict_ude, data, u0)
 
     # Align lengths
     n = min(length(pred), length(data))
-    pred_norm = pred[1:n]./p_all.population
-    data_norm = data[1:n]./p_all.population
+    pred_correct_length = pred[1:n]
+    data_correct_length = data[1:n]
 
     # Mean squared error
-    mse = sum((pred_norm .- data_norm).^2)/length(data_norm)
+    nmse = loss_nmse(pred_correct_length, data_correct_length, p_all.population)
 
     # L2 penalty on NN weights (regularisation)
     l2_penalty = 1e-4 * sum(abs2, p_all.nn_params)
 
-    return mse + l2_penalty
+    return nmse + l2_penalty
 end
 
 function combined_loss_ude_adam(nn_params, predict_ude, trajectories)
@@ -213,7 +213,7 @@ function beta_rational(location, obs)
 
 end
 
-function extract_best_ude(sim_name, obs)
+function extract_best_ude(sim_name, obs, population)
     # Define the root file path
     root = DrWatson.datadir("sims", "ude_single", sim_name)
 
@@ -227,14 +227,13 @@ function extract_best_ude(sim_name, obs)
             pred = SR_results["prediction"]
             # Extract the predicted infectious trajectory for the training data
             i_traj = pred[3, 1:length(obs)]
-            mse = Functions.loss_mse(i_traj, obs)
-            push!(results_list, (mse=mse, fname=filename, i_traj=i_traj))
+            nmse = Functions.loss_nmse(i_traj, obs, population)
+            push!(results_list, (nmse=nmse, fname=filename, i_traj=i_traj))
         end
     end
 
-    # Find the simulation with the lowest MSE
-    best_idx = argmin(r.mse for r in results_list)
-    best_mse = results_list[best_idx].mse
+    # Find the simulation with the lowest NMSE
+    best_idx = argmin(r.nmse for r in results_list)
     best_fname = results_list[best_idx].fname
 
     # Extract the data but convert to a 1 x N matrix
