@@ -24,53 +24,6 @@ using Random; rng = Random.default_rng()
 include(joinpath(@__DIR__, "functions.jl"))
 using .Functions
 
-#========================================================
-DEFINE HYPERPARAMETERS
-=========================================================# 
-
-# Number of data points used for training (total number of entries in the dataset)
-const train_length = 365
-const maxiters = 2500
-# set the number of hidden dimensions in the neural network equal to 3
-hidden_dims = 5
-
-#========================================================
-DEFINE INITIAL STATE
-=========================================================#
-
-# Latent period of 3 days represented by incubation rate sigma
-const sigma = 1/3 
-# Infectious period of 10 days represented by recovery rate gamma
-const gamma = 1/10
-
-# Define initial state same as the generated data
-# Retrieve fixed parameters
-const E0 = 1.0
-const R0_recovered = 0.0
-const D0 = 0.0
-
-init_state = [0.0, E0, 0.0, R0_recovered, D0]
-
-#========================================================
-SET UP MODEL
-=========================================================#
-
-# Define the timespan for the ODE solver
-tspan = [1, train_length]
-
-# Create neural network to estimate the transmission rate:
-# We have two hidden layers with hidden_dims neurons and gelu activation function
-# We are taking beta0, zeta, delta, I(t) and t as inputs and outputting beta(t)
-beta_network = Lux.Chain(Lux.Dense(4=>hidden_dims, gelu), Lux.Dense(hidden_dims=>hidden_dims, gelu),
-                         Lux.Dense(hidden_dims=>1, sigmoid))
-
-# Initialise placeholder parameters to build the structure for the UDE
-p_nn_temp, st_nn = Lux.setup(rng, beta_network)
-
-# Convert to ComponentArray for gradient-based optimisation
-# ComponentArray wraps nested parameter structures into flat array keeping named access
-p_nn_temp = ComponentArray(p_nn_temp)
-
 # Decide how many NN inputs
 function nn_inputs(p, I, ::Val{4})
     delta_norm = (log(p.delta) - log(1e-6)) / (log(1e-2) - log(1e-6))
@@ -383,7 +336,7 @@ function run_model(locations, beta_function, maxiters_adam, maxiters_lbfgs, numb
         beta_plot = plot(days[1:length(beta_traj)], true_beta, color=:blue, linewidth=2, label="True beta", 
         xlabel="Day", ylabel="Beta", title="Beta trajectory for $(sim_name) $(location)", legend=:topright)
         plot!(beta_plot, days[1:length(beta_traj)], beta_traj, color=:red, linewidth=2, label="Predicted beta")
-        annotate!(beta_plot, days[round(Int, length(beta_traj)/2)], maximum(true_beta), text("MSE: $(round(loss, digits=4))", :black))
+        annotate!(beta_plot, days[round(Int, length(beta_traj)/2)], maximum(true_beta), text("NMSE: $(round(loss, digits=4))", :black))
 
         # Save the plot
         savefig(beta_plot, joinpath(plot_dir, "beta_plot.png"))
@@ -417,6 +370,53 @@ end
 
 include("estimated_ground_truth_parameters.jl")
 using .EstimatedGroundTruthParameters: POPULATION
+
+#========================================================
+DEFINE HYPERPARAMETERS
+=========================================================# 
+
+# Number of data points used for training (total number of entries in the dataset)
+const train_length = 365
+const maxiters = 2500
+# set the number of hidden dimensions in the neural network equal to 3
+hidden_dims = 5
+
+#========================================================
+DEFINE INITIAL STATE
+=========================================================#
+
+# Latent period of 3 days represented by incubation rate sigma
+const sigma = 1/3 
+# Infectious period of 10 days represented by recovery rate gamma
+const gamma = 1/10
+
+# Define initial state same as the generated data
+# Retrieve fixed parameters
+const E0 = 1.0
+const R0_recovered = 0.0
+const D0 = 0.0
+
+init_state = [0.0, E0, 0.0, R0_recovered, D0]
+
+#========================================================
+SET UP MODEL
+=========================================================#
+
+# Define the timespan for the ODE solver
+tspan = [1, train_length]
+
+# Create neural network to estimate the transmission rate:
+# We have two hidden layers with hidden_dims neurons and gelu activation function
+# We are taking beta0, zeta, delta, I(t) and t as inputs and outputting beta(t)
+beta_network = Lux.Chain(Lux.Dense(4=>hidden_dims, gelu), Lux.Dense(hidden_dims=>hidden_dims, gelu),
+                         Lux.Dense(hidden_dims=>1, sigmoid))
+
+# Initialise placeholder parameters to build the structure for the UDE
+p_nn_temp, st_nn = Lux.setup(rng, beta_network)
+
+# Convert to ComponentArray for gradient-based optimisation
+# ComponentArray wraps nested parameter structures into flat array keeping named access
+p_nn_temp = ComponentArray(p_nn_temp)
 
 for i = 1:1
     run_model(keys(POPULATION), "exponential", 2500, 0, 4)

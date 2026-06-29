@@ -24,10 +24,10 @@ using .EstimatedGroundTruthParameters: POPULATION, PREVALENCE, R0_REPRODUCTION, 
 FUNCTION TO GENERATE PLOTS OF SIMULATIONS
 =============================================================#
 
-function plot_simulation(sim_name, plot_title)
+function plot_simulation(sim_name, plot_title, location)
 
     # Load the observed data
-    dataset = JLD2.load(datadir("synthetic_trajectories_exponential", "synthesised_MA.jld2"))
+    dataset = JLD2.load(datadir("synthetic_trajectories_exponential", "synthesised_$(location).jld2"))
     # Just use infectious trajectory
     obs = dataset["infectious"]
     days = dataset["days"]
@@ -76,7 +76,7 @@ function plot_simulation(sim_name, plot_title)
     label="Data", xlabel="Day", ylabel="Infection prevalence", title="$plot_title", legend=:topright)
     x_annot = x[end] - 0.02 * (x[end] - x[1])
     y_annot = maximum(obs[1:length(prediction_matrix[1, :])]) * 0.8
-    annotate!(pl, x_annot, y_annot, text("MSE: $(round(mse, digits=4))", 9, :right))
+    annotate!(pl, x_annot, y_annot, text("MSE: $(round(nmse, digits=4))", 9, :right))
     plot!(pl, x, median_prediction, color=:red, linewidth=2, ribbon = ((median_prediction - lower_quantile), (upper_quantile - median_prediction)), label="Median prediction")
     display(pl)
 
@@ -92,7 +92,8 @@ PRODUCE ENSEMBLE PLOTS
 =========================================================# 
 sim_name = "270526_add_regularisation_and_lfbgs"
 plot_title = "Single-trajectory UDE model rational beta function"
-plot_simulation(sim_name, plot_title)
+location = "MA"
+plot_simulation(sim_name, plot_title, location)
 
 #=============================================================
 FUNCTION TO PLOT APPROXIMATED FUNCTION AGAINST SYNTHESISED DATA 
