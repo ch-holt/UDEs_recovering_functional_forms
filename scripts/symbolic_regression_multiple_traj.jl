@@ -50,8 +50,8 @@ p_nn_temp, st_nn = Lux.setup(rng, beta_network)
 RETRIEVE PREDICTIONS AND PARAMETERS FROM THE BEST SIMULATION
 =============================================================#
 
-sim_settings = "exponential_only_MA_090626"
-sim_name = "simulation_v3"
+sim_settings = "exponential_testing_one_input_100626"
+sim_name = "simulation_v1"
 location = "MA"
 filename = "synthesised_$(location).jld2"
 population = POPULATION[location]
@@ -92,11 +92,12 @@ I_grid = collect(range(0, 1; length=1000))
 
 # Define the SR inputs (1000 inputs)
 SR_input_pair_1000 = DataFrame(
-    I/N = vec(I_grid),
+    I_norm = vec(I_grid),
     beta0_norm = fill(beta0_norm, 1000),
     zeta_norm = fill(zeta_norm, 1000),
     delta_norm = fill(delta_norm, 1000)
 )
+
 nn_input_1000 = vcat(fill(beta0_norm, 1, 1000), fill(zeta_norm, 1, 1000), 
                 fill(delta_norm, 1, 1000), reshape(I_grid, 1, :))
 

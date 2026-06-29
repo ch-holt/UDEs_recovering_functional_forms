@@ -34,7 +34,7 @@ function symbolic_regression(SR_input_pair, SR_output_pair, sim_name, location, 
     gamma =1/10
 
     model = SRRegressor(
-        niterations=100,
+        niterations=800,
         binary_operators=[+, -, *, /],
         unary_operators=[exp],
         maxsize = 20,

@@ -61,7 +61,7 @@ tspan = [1, train_length]
 # Create neural network to estimate the transmission rate:
 # We have two hidden layers with hidden_dims neurons and gelu activation function
 # We are taking beta0, zeta, dleta, I(t) and t as inputs and outputting beta(t)
-beta_network = Lux.Chain(Lux.Dense(4=>hidden_dims, gelu), Lux.Dense(hidden_dims=>hidden_dims, gelu),
+beta_network = Lux.Chain(Lux.Dense(1=>hidden_dims, gelu), Lux.Dense(hidden_dims=>hidden_dims, gelu),
                          Lux.Dense(hidden_dims=>1, sigmoid))
 
 # Initialise placeholder parameters to build the structure for the UDE
@@ -100,7 +100,9 @@ function seird_nn!(du, u, p, t)
     delta_norm =(log(p.delta) - log(1e-6))/(log(1e-2) - log(1e-6))
     beta0_norm = (p.R0_reproduction - 1.2)/(6.0 - 1.2)
     zeta_norm = p.zeta/0.05
-    nn_input = [beta0_norm, zeta_norm, delta_norm, I / p.population]
+    #nn_input = [beta0_norm, zeta_norm, delta_norm, I / p.population]
+
+    nn_input =[I/p.population]
 
     # Evaluate neural network and extract scalar
     beta = beta_network(nn_input, p.nn_params, st_nn)[1][1]
@@ -277,6 +279,10 @@ function run_model(locations, beta_function, maxiters_adam, maxiters_lbfgs)
     save(datadir("sims", model_name, sim_name, foldername, "training_results.jld2"), 
     "p_trained", p_trained, "losses_final", losses_final)
 
+    # Plot losses across iterations
+    loss_plot = plot(losses_final, yscale=:log10, xlabel="Iteration", ylabel="Total loss across trajectories", title="Training loss across iterations for $(sim_name)", legend=false)
+    savefig(loss_plot, datadir("sims", model_name, sim_name, foldername, "training_loss_plot.png"))
+
     # Evaluate the trained model on each trajectory and save the results
     # Loop through all simulations
     # Define the root file path
@@ -329,8 +335,7 @@ function run_model(locations, beta_function, maxiters_adam, maxiters_lbfgs)
         beta0_norm = (p_all.R0_reproduction - 1.2)/(6.0 - 1.2)
         zeta_norm = p_all.zeta/0.05
 
-        nn_input = vcat(fill(beta0_norm, 1, length(days)), fill(zeta_norm, 1, length(days)), 
-            fill(delta_norm, 1, length(days)), reshape(x_hat ./ p_all.population, 1, :))
+        nn_input = vcat(reshape(x_hat ./ p_all.population, 1, :))
 
         # Evaluate neural network and extract approximation
         beta_traj = vec(beta_network(nn_input, p_trained, st_nn)[1])
@@ -371,9 +376,12 @@ function run_model(locations, beta_function, maxiters_adam, maxiters_lbfgs)
             true_beta_against_xhat = Functions.beta_rational(location, I_grid*p_all.population)
         end
 
+        loss = Functions.loss_nmse(beta_traj, true_beta, p_all.population)
+
         beta_plot = plot(days[1:length(beta_traj)], true_beta, color=:blue, linewidth=2, label="True beta", 
         xlabel="Day", ylabel="Beta", title="Beta trajectory for $(sim_name) $(location)", legend=:topright)
         plot!(beta_plot, days[1:length(beta_traj)], beta_traj, color=:red, linewidth=2, label="Predicted beta")
+        annotate!(beta_plot, days[round(Int, length(beta_traj)/2)], maximum(true_beta), text("NMSE: $(round(loss, digits=4))", :black))
 
         # Save the plot
         savefig(beta_plot, joinpath(plot_dir, "beta_plot.png"))
@@ -384,13 +392,12 @@ function run_model(locations, beta_function, maxiters_adam, maxiters_lbfgs)
         # Create beta plot against x_hat
         
         # Evaluate neural network and extract approximation
-        y_hat_input = vcat(fill(beta0_norm, 1, 1000), fill(zeta_norm, 1, 1000), 
-            fill(delta_norm, 1, 1000), reshape(I_grid, 1, :))
+        y_hat_input = vcat(reshape(I_grid, 1, :))
 
         y_hat = vec(beta_network(y_hat_input, p_trained, st_nn)[1])
         
         beta_against_xhat_plot = plot(I_grid, true_beta_against_xhat, color=:blue, linewidth=2, label="True beta", 
-        xlabel="Day", ylabel="Beta", title="Beta trajectory for $(sim_name) $(location)", legend=:topright)
+        xlabel="I/N", ylabel="Beta", title="Beta trajectory for $(sim_name) $(location)", legend=:topright)
         plot!(beta_against_xhat_plot, I_grid, y_hat, color=:red, linewidth=2, label="Predicted beta")
 
         # Save the plot
@@ -402,14 +409,17 @@ function run_model(locations, beta_function, maxiters_adam, maxiters_lbfgs)
 end
 
 # Define strings for file names and directory for results
-sim_name ="exponential_only_MA_090626"
+sim_name ="UDE_multiple_exponential_one_input_nmse"
 model_name = "ude_multiple"
 if !isdir(datadir("sims", model_name, sim_name)) 
 	mkpath(datadir("sims", model_name, sim_name))
 end
 
+include("estimated_ground_truth_parameters.jl")
+using .EstimatedGroundTruthParameters: POPULATION
+
 for i = 1:1
-    run_model(["MA"], "exponential", 2500, 0)
+    run_model(keys(POPULATION), "exponential", 2500, 0)
 end
 
 

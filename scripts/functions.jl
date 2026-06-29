@@ -30,11 +30,11 @@ function loss_ude(p_all, predict_ude, data, u0)
 
     # Align lengths
     n = min(length(pred), length(data))
-    pred = pred[1:n]
-    data = data[1:n]
+    pred_norm = pred[1:n]./p_all.population
+    data_norm = data[1:n]./p_all.population
 
     # Mean squared error
-    mse = sum((pred .- data).^2)/length(data)
+    mse = sum((pred_norm .- data_norm).^2)/length(data_norm)
 
     # L2 penalty on NN weights (regularisation)
     l2_penalty = 1e-4 * sum(abs2, p_all.nn_params)
@@ -167,12 +167,12 @@ function combined_loss_ude_lbfgs(nn_params, predict_ude, trajectories)
 end
 
 # Loss function using MSE for evaluation of performance
-function loss_mse(pred, data)
+function loss_nmse(pred, data, population)
 
     # Mean squared error
-    mse = sum((pred .- data).^2)/length(data)
+    nmse = sum((pred ./ population .- data ./ population).^2)/length(data)
 
-    return mse
+    return nmse
 end
 
 # Evaluate the exponential beta function
@@ -196,7 +196,7 @@ function beta_exp(location, obs)
 
 end 
 
-function beta_rational(location, obs; normalised)
+function beta_rational(location, obs)
     
     delta = DELTA[location]
     R0_reproduction = R0_REPRODUCTION[location]
@@ -206,18 +206,8 @@ function beta_rational(location, obs; normalised)
     # Infectious period of 10 days represented by recovery rate gamma
     gamma = 1/10
     beta0 = R0_reproduction * (gamma + delta)
-    if normalised == true
 
-        # Normalise the parameters for the symbolic regression
-        delta_norm =(log(delta) - log(1e-6))/(log(1e-2) - log(1e-6))
-        beta0_norm = (R0_reproduction- 1.2)/(6.0 - 1.2)
-        zeta_norm = zeta/0.05
-
-        true_beta = beta0_norm ./ (1 .+ zeta_norm .* delta_norm .* obs)
-
-    elseif normalised == false
-        true_beta = beta0 ./ (1 .+ zeta .* delta .* obs)
-    end
+    true_beta = beta0 ./ (1 .+ zeta .* delta .* obs)
 
     return true_beta
 
