@@ -27,7 +27,7 @@ FUNCTION TO GENERATE PLOTS OF SIMULATIONS
 function plot_simulation(sim_name, plot_title)
 
     # Load the observed data
-    dataset = JLD2.load(datadir("synthesised_trajectories_single", "synthesised_MA.jld2"))
+    dataset = JLD2.load(datadir("synthetic_trajectories_exponential", "synthesised_MA.jld2"))
     # Just use infectious trajectory
     obs = dataset["infectious"]
     days = dataset["days"]
@@ -81,7 +81,7 @@ function plot_simulation(sim_name, plot_title)
     display(pl)
 
     # Save the plot
-    savefig(pl, datadir("sims", "ude_single", sim_name, "prediction_plotv3.png"))
+    savefig(pl, datadir("sims", "ude_single", sim_name, "prediction_plot.png"))
 
     return pl
 
@@ -90,7 +90,7 @@ end
 #========================================================
 PRODUCE ENSEMBLE PLOTS
 =========================================================# 
-sim_name = "rational_beta_single_traj"
+sim_name = "270526_add_regularisation_and_lfbgs"
 plot_title = "Single-trajectory UDE model rational beta function"
 plot_simulation(sim_name, plot_title)
 
