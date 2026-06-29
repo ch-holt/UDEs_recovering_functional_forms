@@ -59,7 +59,7 @@ obs = dataset["infectious"]
 days = dataset["days"]
 
 # Retrieve NN parameters that resulted in the lowest error on the training data
-I_nn, best_results = Functions.extract_best_ude(sim_name, obs)
+I_nn, best_results = Functions.extract_best_ude(sim_name, obs, population)
 
 p_trained = best_results["p"]
 days = best_results["days"]

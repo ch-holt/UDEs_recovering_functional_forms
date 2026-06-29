@@ -60,8 +60,8 @@ tspan = [1, train_length]
 
 # Create neural network to estimate the transmission rate:
 # We have two hidden layers with hidden_dims neurons and gelu activation function
-# We are taking beta0, zeta, dleta, I(t) and t as inputs and outputting beta(t)
-beta_network = Lux.Chain(Lux.Dense(1=>hidden_dims, gelu), Lux.Dense(hidden_dims=>hidden_dims, gelu),
+# We are taking beta0, zeta, delta, I(t) and t as inputs and outputting beta(t)
+beta_network = Lux.Chain(Lux.Dense(4=>hidden_dims, gelu), Lux.Dense(hidden_dims=>hidden_dims, gelu),
                          Lux.Dense(hidden_dims=>1, sigmoid))
 
 # Initialise placeholder parameters to build the structure for the UDE
@@ -71,20 +71,19 @@ p_nn_temp, st_nn = Lux.setup(rng, beta_network)
 # ComponentArray wraps nested parameter structures into flat array keeping named access
 p_nn_temp = ComponentArray(p_nn_temp)
 
+# Decide how many NN inputs
+function nn_inputs(p, I, ::Val{4})
+    delta_norm = (log(p.delta) - log(1e-6)) / (log(1e-2) - log(1e-6))
+    beta0_norm = (p.R0_reproduction - 1.2) / (6.0 - 1.2)
+    zeta_norm  = p.zeta / 0.05
+    return [beta0_norm, zeta_norm, delta_norm, I / p.population]
+end
 
-# Create placeholder component array to set up neural network
-ph_nn = ComponentArray(
-                nn_params = p_nn_temp,
-                population = 0,
-                prevalence = 0,
-                beta0 = 0,
-                zeta = 0,
-                R0_reproduction = 0,
-                delta = 0
-            )
+nn_inputs(p, I, ::Val{1}) = [I / p.population]
+
 
 # Define the model 
-function seird_nn!(du, u, p, t)
+function seird_nn!(du, u, p, t, valn::Val)
     S, E, I, R, D = u
 
     # Define the population size
@@ -97,13 +96,7 @@ function seird_nn!(du, u, p, t)
     end
 
     # Define normalised inputs for NN
-    delta_norm =(log(p.delta) - log(1e-6))/(log(1e-2) - log(1e-6))
-    beta0_norm = (p.R0_reproduction - 1.2)/(6.0 - 1.2)
-    zeta_norm = p.zeta/0.05
-    #nn_input = [beta0_norm, zeta_norm, delta_norm, I / p.population]
-
-    nn_input =[I/p.population]
-
+    nn_input = nn_inputs(p, I, valn)
     # Evaluate neural network and extract scalar
     beta = beta_network(nn_input, p.nn_params, st_nn)[1][1]
 
@@ -115,27 +108,12 @@ function seird_nn!(du, u, p, t)
     du[5] = p.delta * I
 end
 
-prob_ude = ODEProblem(seird_nn!, init_state, tspan, p_nn_temp)
-
 #========================================================
 PREDICTION AND LOSS FUNCTIONS
-=========================================================# 
+=========================================================#
 
-# Predict number infectious individuals
-function predict_ude(p_all, u0)
-
-    prob = remake(prob_ude, p = p_all, u0 = u0)
-    sol_ude = solve(prob, Rosenbrock23(), saveat=1.0, dense = false)
-
-    # Return nothing if solve failed or didn't reach full timespan
-    if sol_ude.retcode != ReturnCode.Success || length(sol_ude.t) < train_length
-        return nothing
-    end
-    
-    I_pred = sol_ude[3, 1:train_length]
-
-    return I_pred
-end
+# predict_ude is defined as a closure inside train_ude, capturing the prob parameter
+# (which includes the valn-dispatch seird_closure! for the chosen number_of_nn_input)
 
 # Loss function in functions.jl module
 
@@ -143,7 +121,16 @@ end
 TRAINING
 =========================================================# 
 
-function train_ude(locations, nn_params, maxiters_adam, maxiters_lbfgs)
+function train_ude(locations, nn_params, maxiters_adam, maxiters_lbfgs, prob)
+
+    predict_ude = (p_all, u0) -> begin
+        new_prob = remake(prob, p = p_all, u0 = u0)
+        sol_ude = solve(new_prob, Rosenbrock23(), saveat=1.0, dense = false)
+        if sol_ude.retcode != ReturnCode.Success || length(sol_ude.t) < train_length
+            return nothing
+        end
+        sol_ude[3, 1:train_length]
+    end
 
     # Preload all trajectories and store in a vector
     root = datadir("synthetic_trajectories_exponential")
@@ -258,14 +245,18 @@ end
 MAIN FUNCTION TO TRAIN THE UDE AND SAVE THE RESULTS
 =========================================================# 
 
-function run_model(locations, beta_function, maxiters_adam, maxiters_lbfgs)
+function run_model(locations, beta_function, maxiters_adam, maxiters_lbfgs, number_of_nn_input)
     println("Starting run: on thread $(Threads.threadid())")
+    # When the run starts, define ode problem with 4 arguments
+    valn = Val(number_of_nn_input)
+    seird_closure! = (du, u, p, t) -> seird_nn!(du, u, p, t, valn)
+    prob = ODEProblem(seird_closure!, init_state, tspan, p_nn_temp)
 
     # Initialise parameters
     nn_params, st = Lux.setup(rng, beta_network)
     nn_params = ComponentArray(nn_params)
 
-    p_trained, losses_final = train_ude(locations, nn_params, maxiters_adam, maxiters_lbfgs)
+    p_trained, losses_final = train_ude(locations, nn_params, maxiters_adam, maxiters_lbfgs, prob)
 
     # Save the trained parameters and losses for the combined trajectories
 
@@ -323,7 +314,7 @@ function run_model(locations, beta_function, maxiters_adam, maxiters_lbfgs)
         init_state = [S0, E0, I0, R0_recovered, D0]
 
         # Evaluate prediction for the trained parameters on the current trajectory
-        long_term_prob= remake(prob_ude, u0 = init_state, p = p_all)
+        long_term_prob= remake(prob, u0 = init_state, p = p_all)
         long_term_pred = solve(long_term_prob, Rosenbrock23(), saveat=1, dense = false)
         
         # Convert to a 1 x N matrix
@@ -331,11 +322,22 @@ function run_model(locations, beta_function, maxiters_adam, maxiters_lbfgs)
 
         # Define the neural network input for the current trajectory 
         # Keep beta, zeta, delta constant over time but normalise
-        delta_norm =(log(p_all.delta) - log(1e-6))/(log(1e-2) - log(1e-6))
-        beta0_norm = (p_all.R0_reproduction - 1.2)/(6.0 - 1.2)
-        zeta_norm = p_all.zeta/0.05
-
-        nn_input = vcat(reshape(x_hat ./ p_all.population, 1, :))
+        nT = length(x_hat)
+        # Define input for SR via I_grid
+        I_grid = collect(range(0, 1; length=1000))
+        nI = length(I_grid)
+        if number_of_nn_input == 4
+            delta_norm = (log(p_all.delta) - log(1e-6))/(log(1e-2) - log(1e-6))
+            beta0_norm = (p_all.R0_reproduction - 1.2)/(6.0 - 1.2)
+            zeta_norm  = p_all.zeta/0.05
+            nn_input = Float32.(vcat(fill(beta0_norm, 1, nT), fill(zeta_norm, 1, nT),
+                                     fill(delta_norm, 1, nT), reshape(x_hat ./ p_all.population, 1, nT)))
+            y_hat_input = Float32.(vcat(fill(beta0_norm, 1, nI), fill(zeta_norm, 1, nI),
+                                     fill(delta_norm, 1, nI), reshape(I_grid, 1, nI)))
+        elseif number_of_nn_input == 1
+            nn_input = Float32.(reshape(x_hat ./ p_all.population, 1, nT))
+            y_hat_input = Float32.(reshape(I_grid, 1, nI))
+        end
 
         # Evaluate neural network and extract approximation
         beta_traj = vec(beta_network(nn_input, p_trained, st_nn)[1])
@@ -367,7 +369,7 @@ function run_model(locations, beta_function, maxiters_adam, maxiters_lbfgs)
         # Create beta plot
 
         # Define beta function
-        I_grid = collect(range(0, 1; length=1000))
+        
         if beta_function == "exponential"
             true_beta = Functions.beta_exp(location, data)
             true_beta_against_xhat = Functions.beta_exp(location, I_grid*p_all.population)
@@ -376,12 +378,12 @@ function run_model(locations, beta_function, maxiters_adam, maxiters_lbfgs)
             true_beta_against_xhat = Functions.beta_rational(location, I_grid*p_all.population)
         end
 
-        loss = Functions.loss_nmse(beta_traj, true_beta, p_all.population)
+        loss = Functions.loss_nmse(beta_traj, true_beta, maximum(true_beta)-minimum(true_beta))
 
         beta_plot = plot(days[1:length(beta_traj)], true_beta, color=:blue, linewidth=2, label="True beta", 
         xlabel="Day", ylabel="Beta", title="Beta trajectory for $(sim_name) $(location)", legend=:topright)
         plot!(beta_plot, days[1:length(beta_traj)], beta_traj, color=:red, linewidth=2, label="Predicted beta")
-        annotate!(beta_plot, days[round(Int, length(beta_traj)/2)], maximum(true_beta), text("NMSE: $(round(loss, digits=4))", :black))
+        annotate!(beta_plot, days[round(Int, length(beta_traj)/2)], maximum(true_beta), text("MSE: $(round(loss, digits=4))", :black))
 
         # Save the plot
         savefig(beta_plot, joinpath(plot_dir, "beta_plot.png"))
@@ -392,8 +394,6 @@ function run_model(locations, beta_function, maxiters_adam, maxiters_lbfgs)
         # Create beta plot against x_hat
         
         # Evaluate neural network and extract approximation
-        y_hat_input = vcat(reshape(I_grid, 1, :))
-
         y_hat = vec(beta_network(y_hat_input, p_trained, st_nn)[1])
         
         beta_against_xhat_plot = plot(I_grid, true_beta_against_xhat, color=:blue, linewidth=2, label="True beta", 
@@ -409,7 +409,7 @@ function run_model(locations, beta_function, maxiters_adam, maxiters_lbfgs)
 end
 
 # Define strings for file names and directory for results
-sim_name ="UDE_multiple_exponential_one_input_nmse"
+sim_name ="UDE_multiple_beta=exponential_adam=2500_lbfgs=2500_number_of_nn_input=4"
 model_name = "ude_multiple"
 if !isdir(datadir("sims", model_name, sim_name)) 
 	mkpath(datadir("sims", model_name, sim_name))
@@ -419,7 +419,5 @@ include("estimated_ground_truth_parameters.jl")
 using .EstimatedGroundTruthParameters: POPULATION
 
 for i = 1:1
-    run_model(keys(POPULATION), "exponential", 2500, 0)
+    run_model(keys(POPULATION), "exponential", 2500, 0, 4)
 end
-
-

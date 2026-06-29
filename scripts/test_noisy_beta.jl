@@ -88,12 +88,12 @@ for noise_SD in noise_SD_grid
     SR_beta = predict(mach, x_hat/population)
     # Recover true beta result
     true_beta_SR = Functions.beta_exp(location, x_hat)
-    mse_SR_true = Functions.loss_mse(SR_beta, true_beta_SR)
+    nmse_SR_true = Functions.loss_nmse(SR_beta, true_beta_SR, maximum(true_beta_SR) - minimum(true_beta_SR))
 
     # Store equation
     best_equation = r.equation_strings[r.best_idx]
 
-    push!(results_list, (noise_SD=noise_SD, mse=mse_SR_true, best_equation=best_equation))
+    push!(results_list, (noise_SD=noise_SD, nmse=nmse_SR_true, best_equation=best_equation))
 
 end
 

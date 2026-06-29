@@ -79,7 +79,8 @@ nn_output = vec(beta_network(reshape(norm_i_traj, 1, :), p_trained, st_nn)[1])
 
 # Create output directory
 plot_title = "NN approximation no noise"
-sim_name_SR = "$(sim_settings)_$(sim_name)_$(location)_inputs=1_it=100_constcomplex=2"
+sim_name_SR = "$(sim_settings)_$(sim_name)_$(location)_inputs=1_it=100_constcomplex=5"
+
 output_dir = joinpath(@__DIR__, "..", "scripts", "outputs", "$(sim_name_SR)")
 
 symbolic_regression_module.symbolic_regression(x_hat, y_hat, sim_name_SR, location, output_dir, plot_title, 1234, "single", norm_i_traj, nn_output, "exponential")

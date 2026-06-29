@@ -92,7 +92,7 @@ I_grid = collect(range(0, 1; length=1000))
 
 # Define the SR inputs (1000 inputs)
 SR_input_pair_1000 = DataFrame(
-    I_norm = vec(I_grid),
+    I = vec(I_grid),
     beta0_norm = fill(beta0_norm, 1000),
     zeta_norm = fill(zeta_norm, 1000),
     delta_norm = fill(delta_norm, 1000)
