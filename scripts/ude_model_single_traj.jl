@@ -19,29 +19,143 @@ using JLD2
 using Optimization
 using OptimizationOptimJL
 using Random; rng = Random.default_rng()
-# Call the loss functions
-include(joinpath(@__DIR__, "functions.jl"))
-using .Functions
+
+# Call module
+using UDE_FUNCTIONAL_FORMS
+
+
+#========================================================
+MAIN FUNCTION TO TRAIN THE UDE AND SAVE THE RESULTS
+=========================================================# 
+
+function run_model(data, u0; maxiters_adam, maxiters_lbfgs)
+    println("Starting run: on thread $(Threads.threadid())")
+
+    # Initialise parameters
+    p, st = Lux.setup(rng, beta_network)
+    p = ComponentArray(p)
+
+    # Combine all parameters into a single object for optimisation
+    p_init = ComponentArray(
+        nn_params = p,
+        gamma = gamma,
+        sigma = sigma,
+        delta = delta,
+        tmax = train_length,
+        population = population
+    )
+
+    # Make sure to start with a stable parameterization
+    l_init = loss_ude(p_init, predict_ude, data, u0)
+    println("Initial loss: $l_init")
+
+    p_trained, losses_final = train_ude_single_dataset(p_init, predict_ude, data, u0; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs)
+    
+    # Evaluate final long term results 
+    long_term_prob= remake(prob_ude, p = p_trained, tspan = (1.0, 3*365.0), u0 = u0)
+    long_term_pred = solve(long_term_prob, Rosenbrock23(), saveat=1, dense = false)
+
+    beta_prediction = [beta_network([long_term_pred[3, i] / population], p_trained.nn_params, st_nn)[1][1] for i in 1:length(long_term_pred[3, :])]
+
+	# Save the result
+	fname = "simulation"
+
+	# Append a number to the end of the simulation to allow multiple runs of a single set of hyperparameters for ensemble predictions
+	model_iteration = 1
+	while isdir(datadir("exp_pro","sims", model_name, sim_name, "simulation_v$(model_iteration)"))
+		model_iteration += 1
+	end
+    foldername = "simulation_v$(model_iteration)"
+	filename = "$(location)_simulation_v$(model_iteration)"
+
+	mkpath(datadir("exp_pro","sims", model_name, sim_name, foldername, filename))
+
+
+	JLD2.save(datadir("exp_pro","sims", model_name, sim_name, foldername, filename, "results.jld2"),
+		"p", p_trained, "losses", losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_prediction,
+		"days", days)
+
+    #========================
+    CREATE PLOTS
+    ========================#
+
+    plot_dir = plotsdir("sims", model_name, sim_name, foldername, filename)
+
+    # Within this folder create a folder for each trajectory
+    if !isdir(plotsdir(plot_dir)) 
+        mkpath(plotsdir(plot_dir))
+    end
+
+    # Create trajectory plot
+    traj_plot = plot(days[1:length(data)], data[1:length(data)], color=:black, markersize=2, label="Data", 
+    xlabel="Day", ylabel="Infectious individuals", title="Infectious trajectory for $(location)", legend=:topright)
+    plot!(traj_plot, days[1:length(data)], x_hat, color=:red, linewidth=2, label="Predicted trajectory")
+
+    # Save the plot
+    savefig(traj_plot, joinpath(plot_dir, "traj_plot.png"))
+
+    # Create beta plot
+
+    # Define beta function
+    
+    if beta_function == "exponential"
+        true_beta = beta_exp(location, data)
+        true_beta_against_xhat = beta_exp(location, I_grid*p_all.population)
+    elseif beta_function == "rational"
+        true_beta = beta_rational(location, data)
+        true_beta_against_xhat = beta_rational(location, I_grid*p_all.population)
+    end
+
+    loss = loss_nmse(beta_traj, true_beta, maximum(true_beta)-minimum(true_beta))
+
+    beta_plot = plot(days[1:length(beta_traj)], true_beta, color=:blue, linewidth=2, label="True beta", 
+    xlabel="Day", ylabel="Beta", title="Beta trajectory for $(sim_name) $(location)", legend=:topright)
+    plot!(beta_plot, days[1:length(beta_traj)], beta_traj, color=:red, linewidth=2, label="Predicted beta")
+    annotate!(beta_plot, days[round(Int, length(beta_traj)/2)], maximum(true_beta), text("NMSE: $(round(loss, digits=4))", :black))
+
+    # Save the plot
+    savefig(beta_plot, joinpath(plot_dir, "beta_plot.png"))
+
+    # Save the plot
+    savefig(traj_plot, joinpath(plot_dir, "traj_plot.png"))
+
+    # Create beta plot against x_hat
+    
+    # Evaluate neural network and extract approximation
+    y_hat = vec(beta_network(y_hat_input, p_trained, st_nn)[1])
+    
+    beta_against_xhat_plot = plot(I_grid, true_beta_against_xhat, color=:blue, linewidth=2, label="True beta", 
+    xlabel="I/N", ylabel="Beta", title="Beta trajectory for $(sim_name) $(location)", legend=:topright)
+    plot!(beta_against_xhat_plot, I_grid, y_hat, color=:red, linewidth=2, label="Predicted beta")
+
+    # Save the plot
+    savefig(beta_against_xhat_plot, joinpath(plot_dir, "beta_against_xhat_plot.png"))
+
+    
+	println("Finished run: $(location) on thread $(Threads.threadid())")
+
+	return nothing
+end
 
 #========================================================
 DEFINE HYPERPARAMETERS
 =========================================================#
 
-
-
 # Number of data points used for training (total number of entries in the dataset)
 const train_length = 365
+# Define the timespan for the ODE solver
+tspan = [1, train_length]
 
-# set the number of hidden dimensions in the neural network equal to 3
-hidden_dims = 5
 # do 100 simulations 
 n_sims = 50
+location = "MA"
+
 
 #========================================================
 LOAD DATA
 =========================================================#
 
-dataset = JLD2.load(datadir("synthetic_trajectories_rational", "synthesised_MA.jld2"))
+dataset = JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_exponential", "synthesised_$(location).jld2"))
 
 # Extract infectious individuals and days from the dataset
 data = dataset["infectious"]
@@ -62,11 +176,6 @@ const E0 = 1.0
 const R0_recovered = 0.0
 const D0 = 0.0
 
-# Extract from estimated ground truths
-include("estimated_ground_truth_parameters.jl")
-using .EstimatedGroundTruthParameters: POPULATION, PREVALENCE, R0_REPRODUCTION, DELTA, ZETA
-
-location = "MA"
 population = POPULATION[location]
 prevalence = PREVALENCE[location]
 delta = DELTA[location]
@@ -85,227 +194,32 @@ u0 = [S0, E0, I0, R0_recovered, D0]
 SET UP MODEL
 =========================================================#
 
-# Define the timespan for the ODE solver
-tspan = [1, train_length]
+hidden_dims = 5
+input_size = 1
+output_size = 1
+activation_function = gelu
+final_activation_function = sigmoid
 
-# Create neural network to estimate the transmission rate:
-# We have two hidden layers with hidden_dims neurons and gelu activation function
-# We are taking normalised I(t) as an input and outputting beta(t)
-beta_network = Lux.Chain(Lux.Dense(1=>hidden_dims, gelu), Lux.Dense(hidden_dims=>hidden_dims, gelu),
-                         Lux.Dense(hidden_dims=>1, sigmoid))
+beta_network, p_nn_temp, st_nn = build_neural_network(rng, hidden_dims, input_size, output_size, 
+                            activation_function, final_activation_function)
 
-# Initialise parameters to build the structure for the UDE
-p_nn_temp, st_nn = Lux.setup(rng, beta_network)
+seird_nn! = make_seird_nn(beta_network, st_nn, sigma, gamma, input_size)
+prob_ude = ODEProblem(seird_nn!, u0, tspan, p_nn_temp)
+predict_ude = make_predict_ude(prob_ude, train_length)
 
-# Convert to ComponentArray for gradient-based optimisation
-# ComponentArray wraps nested parameter structures into flat array keeping named access
-p_nn_temp = ComponentArray(p_nn_temp)
-
-# Create placeholder component array to set up neural network
-ph_nn = ComponentArray(
-                nn_params = p_nn_temp,
-                gamma = gamma,
-                sigma = sigma,
-                delta = delta,
-                tmax = train_length
-            )
-
-# Define the model 
-function seird_nn!(du, u, p, t)
-    S, E, I, R, D = u
-
-    # Define the population size
-    N = S + E + I + R
-
-    # If population size less than or equal to zero return zero
-    if N <= 0
-        du .= 0.0
-        return
-    end
-
-    # Define normalised inputs for NN
-    nn_input = [I / population]
-
-    # Evaluate neural network and extract scalar
-    beta = beta_network(nn_input, p.nn_params, st_nn)[1][1]
-
-    # Define the SEIRD equations
-    du[1] = -beta * S * I / N
-    du[2] = beta * S * I / N - sigma * E
-    du[3] = sigma * E - (gamma + delta) * I
-    du[4] = gamma * I
-    du[5] = delta * I
-end
-
-prob_ude = ODEProblem(seird_nn!, u0, tspan, ph_nn)
-
-#========================================================
-PREDICTION AND LOSS FUNCTIONS
-=========================================================# 
-
-# Predict number infectious individuals
-function predict_ude(p_all, u0)
-    
-    prob = remake(prob_ude, p = p_all, u0 = u0)
-    sol_ude = solve(prob, Rosenbrock23(), saveat=1.0, dense = false)
-
-    # Return nothing if solve failed or didn't reach full timespan
-    if sol_ude.retcode != ReturnCode.Success || length(sol_ude.t) < train_length
-        return nothing
-    end
-
-    I_pred = sol_ude[3, 1:train_length]
-
-    return I_pred
-end
-
-# Loss function in functions.jl module
-
-#========================================================
-TRAINING
-=========================================================# 
-
-
-function train_ude(p; maxiters_adam, maxiters_lbfgs)
-
-    # Set up optimisation (first Adam then LBFGS)
-    optimised_state = Optimisers.setup(Optimisers.Adam(1e-3), p)
-
-    # Create 1D vector to track losses during training
-    losses = Float64[]
-    best_loss = Inf
-    best_p = p
-
-    for iter in 1:maxiters_adam
-
-        # Compute the loss, predicted mortalities and gradient function
-        l, back_all = pullback(theta -> Functions.loss_ude(theta, predict_ude, data, u0), p)
-        println("Iteration $iter, Loss: $l")
-        # Evaluate the gradient of the loss w.r.t p
-        grad = back_all((one(l)))[1]
-
-    	# Stop training if 5 consecutive Inf losses
-		if l == Inf && length(losses) >= 5 && all(isinf, losses[end-4:end])
-			println("Unstable parameter region. Aborting...")
-			break
-		end 
-
-		if isnothing(grad)
-			println("No gradient found. Loss: $l")
-			p = best_p
-			continue
-		end
-
-        push!(losses, l)
-
-        # Store best iteration
-        if l < best_loss
-            best_loss = l
-            best_p = p
-        end
-        
-        # Update parameters using the gradient
-        optimised_state, p = Optimisers.update(optimised_state, p, grad)
-
-    end
-
-    # Then do LBFGS optimisation
-    adtype = Optimization.AutoZygote()
-    optfunc   = Optimization.OptimizationFunction(
-                 (theta, _) -> Functions.loss_ude(theta, predict_ude, data, u0),
-                 adtype)
-    optprob = Optimization.OptimizationProblem(optfunc, best_p)
-
-    iter_lbfgs = Ref(0)
-    res = Optimization.solve(
-        optprob,
-        Optim.LBFGS(m=10),
-        callback = (state, l) -> begin
-            iter_lbfgs[] += 1
-            push!(losses, l)
-
-            if l < best_loss
-                best_loss = l
-                best_p = state.u
-            end
-
-            iter_lbfgs[] % 50 == 0 && println("LBFGS iter $(iter_lbfgs[]): $l")
-            return false
-        end,
-        maxiters = maxiters_lbfgs
-    )
-
-    final_loss = Functions.loss_ude(res.u, predict_ude, data, u0)
-    if final_loss < best_loss
-        best_p = res.u
-    end
-
-    return best_p, losses
-end
-
-#========================================================
-MAIN FUNCTION TO TRAIN THE UDE AND SAVE THE RESULTS
-=========================================================# 
-
-function run_model(maxiters_adam, maxiters_lbfgs)
-    println("Starting run: on thread $(Threads.threadid())")
-
-    # Initialise parameters
-    p, st = Lux.setup(rng, beta_network)
-    p = ComponentArray(p)
-
-    # Combine all parameters into a single object for optimisation
-    p_init = ComponentArray(
-        nn_params = p,
-        gamma = gamma,
-        sigma = sigma,
-        delta = delta,
-        tmax = train_length
-    )
-
-    # Make sure to start with a stable parameterization
-    l_init = Functions.loss_ude(p_init, predict_ude, data, u0)
-    println("Initial loss: $l_init")
-
-    p_trained, losses_final = train_ude(p_init; maxiters_adam, maxiters_lbfgs)
-
-    # Evaluate final long term results 
-    long_term_prob= remake(prob_ude, p = p_trained, tspan = (1.0, 3*365.0), u0 = u0)
-    long_term_pred = solve(long_term_prob, Rosenbrock23(), saveat=1, dense = false)
-
-    beta_prediction = [beta_network([long_term_pred[3, i] / population], p_trained.nn_params, st_nn)[1][1] for i in 1:length(long_term_pred[3, :])]
-
-    region = "Massachusetts"
-    param_name = hidden_dims
-
-	# Save the result
-	fname = "$(region)_$(param_name)_t$(Threads.threadid())"
-
-	# Append a number to the end of the simulation to allow multiple runs of a single set of hyperparameters for ensemble predictions
-	model_iteration = 1
-	while isdir(datadir("sims", model_name, sim_name, "$(fname)_v$(model_iteration)"))
-		model_iteration += 1
-	end
-	fname = fname * "_v$model_iteration"
-
-	mkpath(datadir("sims", model_name, sim_name, fname))
-
-
-	JLD2.save(datadir("sims", model_name, sim_name, fname, "results.jld2"),
-		"p", p_trained, "losses", losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_prediction,
-		"days", days)
-	println("Finished run: $(region) on thread $(Threads.threadid())")
-
-	return nothing
-end
-
+beta_function = "exponential"
+maxiters_adam = 1
+maxiters_lbfgs = 1
+number_of_nn_input = 1
 
 # Define strings for file names and directory for results
-sim_name ="rational_beta_single_traj"
 model_name = "ude_single"
-if !isdir(datadir("sims", model_name, sim_name)) 
-	mkpath(datadir("sims", model_name, sim_name))
+sim_name ="UDE_single_location=$(location)_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_number_of_nn_input=$(number_of_nn_input)"
+if !isdir(datadir("exp_pro","sims", model_name, sim_name)) 
+	mkpath(datadir("exp_pro","sims", model_name, sim_name))
 end
+
+
 for i = 1:1
-    run_model(2500, 2000)
+    run_model(data, u0; maxiters_adam = maxiters_adam, maxiters_lbfgs = maxiters_lbfgs)
 end

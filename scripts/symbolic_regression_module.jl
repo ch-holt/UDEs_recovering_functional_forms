@@ -2,14 +2,13 @@
 MODULE TO UNDERTAKE SYMBOLIC REGRESSION
 =======================================#  
 
-include("functions.jl")
+# Call module
+using UDE_FUNCTIONAL_FORMS
 
 module symbolic_regression_module
 
 export symbolic_regression
 
-include("estimated_ground_truth_parameters.jl")
-using .EstimatedGroundTruthParameters: POPULATION, PREVALENCE, R0_REPRODUCTION, DELTA, ZETA
 import Main: Functions
 using SymbolicUtils 
 using SymbolicRegression
@@ -20,9 +19,6 @@ using Plots
 using Statistics
 using JLD2
 using DataFrames
-
-
-
 
 function symbolic_regression(SR_input_pair, SR_output_pair, sim_name, location, output_dir, plot_title, seed, sing_or_multi, norm_i_traj, nn_output_days, beta_function)
     
@@ -42,7 +38,7 @@ function symbolic_regression(SR_input_pair, SR_output_pair, sim_name, location, 
         # Make results reproducible by disabling multithreading
         #populations = 15,
         population_size = 50,
-        parsimony = 0.01,
+        parsimony = 0.1,
         complexity_of_constants = 5,
         parallelism=:serial,
         seed = seed,

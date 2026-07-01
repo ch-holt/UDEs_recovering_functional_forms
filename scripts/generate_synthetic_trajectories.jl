@@ -20,8 +20,8 @@ using ComponentArrays
 using DSP
 using Plots 
 
-include(joinpath(@__DIR__, "functions.jl"))
-using .Functions
+# Call module
+using UDE_FUNCTIONAL_FORMS
 
 #========================================================
 DEFINE THE MODEL

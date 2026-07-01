@@ -1,25 +1,19 @@
 #=============================================================
-MODULE CONTAINING FUNCTIONS USED MULTIPLE TIMES IN THE PROJECT
+NMSE LOSS FUNCTION
 ==============================================================# 
 
-module Functions
+function loss_nmse(pred, data, normalising_factor)
 
-export loss_ude
-export loss_nmse
-export beta_exp
-export beta_rational
-export extract_best_ude
-export add_gaussian_noise
+    # Mean squared error
+    nmse = sum((pred ./ normalising_factor .- data ./ normalising_factor).^2)/length(data)
 
-include("estimated_ground_truth_parameters.jl")
-using .EstimatedGroundTruthParameters: POPULATION, PREVALENCE, R0_REPRODUCTION, DELTA, ZETA
-using DrWatson
-using JLD2
-using ComponentArrays
-using Zygote
-using Optimization
+    return nmse
+end
 
-# Loss function using NMSE
+#=============================================================
+LOSS FUNCTION FOR SINGLE DATASET USING NMSE
+==============================================================# 
+
 function loss_ude(p_all, predict_ude, data, u0)
     pred = predict_ude(p_all, u0)
 
@@ -41,6 +35,10 @@ function loss_ude(p_all, predict_ude, data, u0)
 
     return nmse + l2_penalty
 end
+
+#=============================================================
+COMBINED LOSS FOR MULTIPLE DATASETS USING ADAM OPTIMISER
+==============================================================# 
 
 function combined_loss_ude_adam(nn_params, predict_ude, trajectories)
     
@@ -81,7 +79,7 @@ function combined_loss_ude_adam(nn_params, predict_ude, trajectories)
         println("Evaluating trajectory $i")
 
         # Compute the loss and gradient for the current trajectory
-        l, back_all = pullback(theta -> Functions.loss_ude(theta, predict_ude, data, u0), p_all)
+        l, back_all = pullback(theta -> loss_ude(theta, predict_ude, data, u0), p_all)
 
         if !isfinite(l)
             return 1e20, nothing
@@ -103,6 +101,10 @@ function combined_loss_ude_adam(nn_params, predict_ude, trajectories)
     end
     return total_loss, total_grad
 end
+
+#=============================================================
+COMBINED LOSS FOR MULTIPLE DATASETS USING LBFGS
+==============================================================# 
 
 function combined_loss_ude_lbfgs(nn_params, predict_ude, trajectories)
     
@@ -151,7 +153,7 @@ function combined_loss_ude_lbfgs(nn_params, predict_ude, trajectories)
             continue
         end
 
-        l = Functions.loss_ude(p_all, predict_ude, data, u0)
+        l = loss_ude(p_all, predict_ude, data, u0)
         if !isfinite(l) || l >= 1e20
             total_loss += 1e20
             continue
@@ -166,104 +168,3 @@ function combined_loss_ude_lbfgs(nn_params, predict_ude, trajectories)
     return total_loss
 end
 
-# Loss function using MSE for evaluation of performance
-function loss_nmse(pred, data, population)
-
-    # Mean squared error
-    nmse = sum((pred ./ population .- data ./ population).^2)/length(data)
-
-    return nmse
-end
-
-# Evaluate the exponential beta function
-function beta_exp(location, obs)
-    
-    delta = DELTA[location]
-    R0_reproduction = R0_REPRODUCTION[location]
-    zeta = ZETA[location]
-    population = POPULATION[location]
-
-    # Derive other parameters
-    # Infectious period of 10 days represented by recovery rate gamma
-    gamma = 1/10
-    beta0 = R0_reproduction * (gamma + delta)
-
-
-    true_beta = beta0 .* exp.(-zeta .* delta .* obs)
-
-
-    return true_beta
-
-end 
-
-function beta_rational(location, obs)
-    
-    delta = DELTA[location]
-    R0_reproduction = R0_REPRODUCTION[location]
-    zeta = ZETA[location]
-
-    # Derive other parameters
-    # Infectious period of 10 days represented by recovery rate gamma
-    gamma = 1/10
-    beta0 = R0_reproduction * (gamma + delta)
-
-    true_beta = beta0 ./ (1 .+ zeta .* delta .* obs)
-
-    return true_beta
-
-end
-
-function extract_best_ude(sim_name, obs, population)
-    # Define the root file path
-    root = DrWatson.datadir("sims", "ude_single", sim_name)
-
-    # Collect results from all simulations
-    results_list = []
-    for filename in readdir(root)
-        # Only include directories
-        if isdir(joinpath(root, filename))
-            # Extract results, predictions and losses
-            SR_results = JLD2.load(DrWatson.datadir("sims", "ude_single", sim_name, filename, "results.jld2"))
-            pred = SR_results["prediction"]
-            # Extract the predicted infectious trajectory for the training data
-            i_traj = pred[3, 1:length(obs)]
-            nmse = Functions.loss_nmse(i_traj, obs, population)
-            push!(results_list, (nmse=nmse, fname=filename, i_traj=i_traj))
-        end
-    end
-
-    # Find the simulation with the lowest NMSE
-    best_idx = argmin(r.nmse for r in results_list)
-    best_fname = results_list[best_idx].fname
-
-    # Extract the data but convert to a 1 x N matrix
-    I_nn = reshape(results_list[best_idx].i_traj, 1, :)
-
-    # Extract the NN parameters from the best simulation
-    best_results = JLD2.load(DrWatson.datadir("sims", "ude_single", sim_name, best_fname, "results.jld2"))
-
-    return I_nn, best_results
-end
-
-function add_gaussian_noise(noise_SD, data, rng)
-
-    # add Gaussian noise
-    sd = noise_SD * max(0.5, maximum(data))
-    noise = randn(rng, length(data)) .* sd
-    noisy_beta = data .+ noise
-
-    # Remove negative values
-    noisy_beta = max.(noisy_beta, 0.0)
-
-    return noisy_beta
-end
-
-function _format_equation_sigfigs(equation_text::AbstractString)
-    number_pattern = r"(?<![A-Za-z_])[+-]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?"
-    return replace(equation_text, number_pattern => match -> begin
-        number = parse(Float64, match)
-        string(round(number, sigdigits=3))
-    end)
-end
-
-end

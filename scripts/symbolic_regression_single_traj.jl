@@ -21,27 +21,25 @@ using Plots
 using Statistics
 using ComponentArrays
 using Random; rng = Random.default_rng()
-# Call the loss functions
-include(joinpath(@__DIR__, "functions.jl"))
-using .Functions
+
+# Call module
+using UDE_FUNCTIONAL_FORMS
+
 include(joinpath(@__DIR__, "symbolic_regression_module.jl"))
 using .symbolic_regression_module
-include("estimated_ground_truth_parameters.jl")
-using .EstimatedGroundTruthParameters: POPULATION, PREVALENCE, R0_REPRODUCTION, DELTA, ZETA
 
 #========================================================
 SET UP NEURAL NETWORK
 =========================================================# 
 
-# Define the NN architecture
 hidden_dims = 5
+input_size = 1
+output_size = 1
+activation_function = gelu
+final_activation_function = sigmoid
 
-# Retrieve nn architecture
-beta_network = Lux.Chain(Lux.Dense(1=>hidden_dims, gelu), Lux.Dense(hidden_dims=>hidden_dims, gelu),
-                         Lux.Dense(hidden_dims=>1, softplus))
-
-# Initialise parameters
-p_nn_temp, st_nn = Lux.setup(rng, beta_network)
+beta_network, p_nn_temp, st_nn = build_neural_network(rng, hidden_dims, input_size, output_size, 
+                            activation_function, final_activation_function)
 
 #=============================================================
 RETRIEVE PREDICTIONS AND PARAMETERS FROM THE BEST SIMULATION
@@ -52,7 +50,7 @@ location = "MA"
 population = POPULATION[location]
 
 # Load the observed data
-dataset = JLD2.load(DrWatson.datadir("synthetic_trajectories_exponential", "synthesised_MA.jld2"))
+dataset = JLD2.load(DrWatson.datadir("exp_pro","synthetic_data","synthetic_trajectories_exponential", "synthesised_MA.jld2"))
    
 # Just use infectious trajectory
 obs = dataset["infectious"]
