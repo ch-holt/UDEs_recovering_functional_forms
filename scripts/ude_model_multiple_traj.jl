@@ -110,6 +110,7 @@ function run_model(locations, beta_function; maxiters_adam, maxiters_lbfgs, numb
         # Define the neural network input for the current trajectory 
         # Keep beta, zeta, delta constant over time but normalise
         nT = length(x_hat)
+        
         # Define input for SR via I_grid
         I_grid = collect(range(0, 1; length=1000))
         nI = length(I_grid)
@@ -145,10 +146,8 @@ function run_model(locations, beta_function; maxiters_adam, maxiters_lbfgs, numb
         ========================#
 
         plot_dir = plotsdir("sims", model_name, sim_name, foldername, filename)
-
-        # Within this folder create a folder for each trajectory
-        if !isdir(plotsdir(plot_dir)) 
-            mkpath(plotsdir(plot_dir))
+        if !isdir(plot_dir) 
+            mkpath(plot_dir)
         end
 
         # Create trajectory plot
@@ -183,9 +182,12 @@ function run_model(locations, beta_function; maxiters_adam, maxiters_lbfgs, numb
         # Evaluate neural network and extract approximation
         y_hat = vec(beta_network(y_hat_input, p_trained, st_nn)[1])
         
+        loss_I_grid = loss_nmse(y_hat, true_beta_against_xhat, maximum(true_beta_against_xhat)-minimum(true_beta_against_xhat))
+
         beta_against_xhat_plot = plot(I_grid, true_beta_against_xhat, color=:blue, linewidth=2, label="True beta", 
         xlabel="I/N", ylabel="Beta", title="Beta trajectory for $(location)", legend=:topright)
         plot!(beta_against_xhat_plot, I_grid, y_hat, color=:red, linewidth=2, label="Predicted beta")
+        annotate!(beta_against_xhat_plot, I_grid[round(Int, length(y_hat)/2)], maximum(true_beta_against_xhat), text("NMSE: $(round(loss_I_grid, digits=4))", :black))
 
         # Save the plot
         savefig(beta_against_xhat_plot, joinpath(plot_dir, "beta_against_xhat_plot.png"))
@@ -251,7 +253,7 @@ number_of_nn_input = 4
 
 # Define strings for file names and directory for results
 model_name = "ude_multiple"
-locations = ["MA", "MD", "MI"]
+locations = ["MA"]
 sim_name ="UDE_multiple_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_number_of_nn_input=$(number_of_nn_input)_locations=$(join(locations, "_"))"
 if !isdir(datadir("exp_pro","sims", model_name, sim_name)) 
 	mkpath(datadir("exp_pro","sims", model_name, sim_name))

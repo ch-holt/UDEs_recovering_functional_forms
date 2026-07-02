@@ -51,37 +51,59 @@ function run_model(data, u0; maxiters_adam, maxiters_lbfgs)
     println("Initial loss: $l_init")
 
     p_trained, losses_final = train_ude_single_dataset(p_init, predict_ude, data, u0; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs)
-    
+
+    loc_foldername = "synthesised_$(location)"
+
+	# Append a number to the end of the simulation to allow multiple runs of a single set of hyperparameters for ensemble predictions
+	model_iteration = 1
+	while isdir(datadir("exp_pro","sims", model_name, sim_name, loc_foldername, "simulation_v$(model_iteration)"))
+		model_iteration += 1
+	end
+    foldername = "simulation_v$(model_iteration)"
+	filename = "synthesised_$(location)"
+
+    # Within the plots folder create a folder for each trajectory
+    if !isdir(plotsdir("sims", model_name, sim_name, loc_foldername, foldername)) 
+        mkpath(plotsdir("sims", model_name, sim_name, loc_foldername, foldername))
+    end
+
+    # Plot losses across iterations
+    loss_plot = plot(losses_final, yscale=:log10, xlabel="Iteration", ylabel="Total loss across trajectories (log scale)", title="Training loss across iterations", legend=false)
+    savefig(loss_plot, plotsdir("sims", model_name, sim_name, loc_foldername, foldername, "training_loss_plot.png"))
+
     # Evaluate final long term results 
     long_term_prob= remake(prob_ude, p = p_trained, tspan = (1.0, 3*365.0), u0 = u0)
     long_term_pred = solve(long_term_prob, Tsit5(), saveat=1, dense = false)
 
-    beta_prediction = [beta_network([long_term_pred[3, i] / population], p_trained.nn_params, st_nn)[1][1] for i in 1:length(long_term_pred[3, :])]
+    # Convert to a 1 x N matrix
+    x_hat = long_term_pred[3, 1:length(data)]
 
-	# Append a number to the end of the simulation to allow multiple runs of a single set of hyperparameters for ensemble predictions
-	model_iteration = 1
-	while isdir(datadir("exp_pro","sims", model_name, sim_name, "simulation_v$(model_iteration)"))
-		model_iteration += 1
-	end
-    foldername = "simulation_v$(model_iteration)"
-	filename = "$(location)_simulation_v$(model_iteration)"
+    # Define the neural network input
+    nT = length(x_hat)
+    
+    # Define input for SR via I_grid
+    I_grid = collect(range(0, 1; length=1000))
+    nI = length(I_grid)
 
-	mkpath(datadir("exp_pro","sims", model_name, sim_name, foldername, filename))
+    nn_input = Float64.(reshape(x_hat ./ p_init.population, 1, nT))
+    y_hat_input = Float64.(reshape(I_grid, 1, nI))
 
 
-	JLD2.save(datadir("exp_pro","sims", model_name, sim_name, foldername, filename, "results.jld2"),
-		"p", p_trained, "losses", losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_prediction,
+    beta_traj = vec(beta_network(nn_input, p_trained.nn_params, st_nn)[1])
+
+    mkpath(datadir("exp_pro","sims", model_name, sim_name, loc_foldername, foldername))
+
+	JLD2.save(datadir("exp_pro","sims", model_name, sim_name, loc_foldername, foldername, "results.jld2"),
+		"p", p_trained, "losses", losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_traj,
 		"days", days)
 
     #========================
     CREATE PLOTS
     ========================#
 
-    plot_dir = plotsdir("sims", model_name, sim_name, foldername, filename)
-
-    # Within this folder create a folder for each trajectory
-    if !isdir(plotsdir(plot_dir)) 
-        mkpath(plotsdir(plot_dir))
+    plot_dir = plotsdir("sims", model_name, sim_name, loc_foldername, foldername)
+    if !isdir(plot_dir) 
+        mkpath(plot_dir)
     end
 
     # Create trajectory plot
@@ -95,19 +117,13 @@ function run_model(data, u0; maxiters_adam, maxiters_lbfgs)
     # Create beta plot
 
     # Define beta function
-    
-    if beta_function == "exponential"
-        true_beta = beta_exp(location, data)
-        true_beta_against_xhat = beta_exp(location, I_grid*p_all.population)
-    elseif beta_function == "rational"
-        true_beta = beta_rational(location, data)
-        true_beta_against_xhat = beta_rational(location, I_grid*p_all.population)
-    end
+    true_beta = beta_function(location, data)
+    true_beta_against_xhat = beta_function(location, I_grid*p_init.population)
 
     loss = loss_nmse(beta_traj, true_beta, maximum(true_beta)-minimum(true_beta))
 
     beta_plot = plot(days[1:length(beta_traj)], true_beta, color=:blue, linewidth=2, label="True beta", 
-    xlabel="Day", ylabel="Beta", title="Beta trajectory for $(sim_name) $(location)", legend=:topright)
+    xlabel="Day", ylabel="Beta", title="Beta trajectory for $(location)", legend=:topright)
     plot!(beta_plot, days[1:length(beta_traj)], beta_traj, color=:red, linewidth=2, label="Predicted beta")
     annotate!(beta_plot, days[round(Int, length(beta_traj)/2)], maximum(true_beta), text("NMSE: $(round(loss, digits=4))", :black))
 
@@ -120,11 +136,14 @@ function run_model(data, u0; maxiters_adam, maxiters_lbfgs)
     # Create beta plot against x_hat
     
     # Evaluate neural network and extract approximation
-    y_hat = vec(beta_network(y_hat_input, p_trained, st_nn)[1])
+    y_hat = vec(beta_network(y_hat_input, p_trained.nn_params, st_nn)[1])
     
+    loss_I_grid = loss_nmse(y_hat, true_beta_against_xhat, maximum(true_beta_against_xhat)-minimum(true_beta_against_xhat))
+
     beta_against_xhat_plot = plot(I_grid, true_beta_against_xhat, color=:blue, linewidth=2, label="True beta", 
-    xlabel="I/N", ylabel="Beta", title="Beta trajectory for $(sim_name) $(location)", legend=:topright)
+    xlabel="I/N", ylabel="Beta", title="Beta trajectory for $(location)", legend=:topright)
     plot!(beta_against_xhat_plot, I_grid, y_hat, color=:red, linewidth=2, label="Predicted beta")
+    annotate!(beta_against_xhat_plot, I_grid[round(Int, length(y_hat)/2)], maximum(true_beta_against_xhat), text("NMSE: $(round(loss_I_grid, digits=4))", :black))
 
     # Save the plot
     savefig(beta_against_xhat_plot, joinpath(plot_dir, "beta_against_xhat_plot.png"))
@@ -205,14 +224,14 @@ seird_nn! = make_seird_nn(beta_network, st_nn, sigma, gamma, input_size)
 prob_ude = ODEProblem(seird_nn!, u0, tspan, p_nn_temp)
 predict_ude = make_predict_ude(prob_ude, train_length)
 
-beta_function = "exponential"
-maxiters_adam = 1
-maxiters_lbfgs = 1
+beta_function = beta_exp
+maxiters_adam = 5000
+maxiters_lbfgs = 2000
 number_of_nn_input = 1
 
 # Define strings for file names and directory for results
 model_name = "ude_single"
-sim_name ="UDE_single_location=$(location)_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_number_of_nn_input=$(number_of_nn_input)"
+sim_name ="UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_number_of_nn_input=$(number_of_nn_input)"
 if !isdir(datadir("exp_pro","sims", model_name, sim_name)) 
 	mkpath(datadir("exp_pro","sims", model_name, sim_name))
 end

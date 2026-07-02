@@ -131,7 +131,6 @@ function train_ude_multiple_datasets(nn_params, predict_ude, trajectories; maxit
     end
 
     # Then do LBFGS optimisation
-    adtype = Optimization.AutoZygote()
     optfunc   = Optimization.OptimizationFunction(
                 (theta, _) -> combined_loss_ude_lbfgs(theta, predict_ude, trajectories)[1],
                 grad = (G, theta, _)-> (G .= combined_loss_ude_lbfgs(theta, predict_ude, trajectories)[2])
