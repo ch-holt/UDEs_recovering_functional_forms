@@ -19,7 +19,7 @@ function loss_ude(p_all, predict_ude, data, u0)
 
     if isnothing(pred)
         println("ODE solve failed")
-        return 1e20
+        return Inf
     end
 
     # Align lengths
@@ -30,10 +30,14 @@ function loss_ude(p_all, predict_ude, data, u0)
     # Mean squared error
     nmse = loss_nmse(pred_correct_length, data_correct_length, p_all.population)
 
-    # L2 penalty on NN weights (regularisation)
-    l2_penalty = 1e-4 * sum(abs2, p_all.nn_params)
+    return nmse
+end
 
-    return nmse + l2_penalty
+function regularisation(nn_params)
+    # L2 penalty on NN weights (regularisation)
+    l2_penalty = 1e-5 * sum(abs2, nn_params)
+
+    return l2_penalty
 end
 
 #=============================================================
@@ -99,6 +103,20 @@ function combined_loss_ude_adam(nn_params, predict_ude, trajectories)
         total_grad .+= grad.nn_params
 
     end
+
+    # Average loss and gradient across all trajectories and datapoints
+    total_loss /= length(trajectories)
+    total_grad ./= length(trajectories)
+
+    # add regularisation
+    reg_loss, reg_back = pullback(theta -> regularisation(theta), nn_params)
+    reg_grad = reg_back(one(reg_loss))[1]
+
+    total_loss += reg_loss
+    total_grad .+= reg_grad
+
+
+
     return total_loss, total_grad
 end
 
@@ -109,8 +127,8 @@ COMBINED LOSS FOR MULTIPLE DATASETS USING LBFGS
 function combined_loss_ude_lbfgs(nn_params, predict_ude, trajectories)
     
     gamma = 1/10
-    println("Evaluating combined loss for current parameters across $(length(trajectories)) trajectories...")
-
+    println("Evaluating combined LBFGS loss for current parameters across $(length(trajectories)) trajectories...")
+    total_grad = zero(nn_params)
     total_loss = 0.0
 
     for (i, traj) in enumerate(trajectories)
@@ -142,29 +160,25 @@ function combined_loss_ude_lbfgs(nn_params, predict_ude, trajectories)
 
         println("Evaluating trajectory $i")
 
-        # Check the ODE is solvable and ignore if not
-        pred_check = Zygote.ignore() do
-            predict_ude(p_all, u0)
+        l, back_all = pullback(theta -> loss_ude(theta, predict_ude, data, u0), p_all)
+        if !isfinite(l)
+           error("ODE solve failed for trajectory $i. Loss: $l")
         end
-
-
-        if isnothing(pred_check)
-            total_loss += 1e20
-            continue
-        end
-
-        l = loss_ude(p_all, predict_ude, data, u0)
-        if !isfinite(l) || l >= 1e20
-            total_loss += 1e20
-            continue
-        end
-
+        grad = back_all((one(l)))[1]
         println("Loss for trajectory $i: $l")
 
-        total_loss += ifelse(isfinite(l), l, 1e20)
-
+        total_loss += l
+        total_grad .+= grad.nn_params
     end
 
-    return total_loss
+    total_loss /= length(trajectories)
+    total_grad ./= length(trajectories)
+
+    reg_loss, reg_back = pullback(theta -> regularisation(theta), nn_params)
+    reg_grad = reg_back(one(reg_loss))[1]
+    total_loss += reg_loss
+    total_grad .+= reg_grad
+
+    return total_loss, total_grad
 end
 

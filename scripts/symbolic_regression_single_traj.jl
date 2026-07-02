@@ -50,7 +50,7 @@ location = "MA"
 population = POPULATION[location]
 
 # Load the observed data
-dataset = JLD2.load(DrWatson.datadir("exp_pro","synthetic_data","synthetic_trajectories_exponential", "synthesised_MA.jld2"))
+dataset = JLD2.load(DrWatson.datadir("exp_pro","synthetic_data","synthetic_trajectories_beta_exp", "synthesised_MA.jld2"))
    
 # Just use infectious trajectory
 obs = dataset["infectious"]

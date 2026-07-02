@@ -36,6 +36,7 @@ function run_model(locations, beta_function; maxiters_adam, maxiters_lbfgs, numb
     # Initialise parameters
     nn_params, st = Lux.setup(rng, beta_network)
     nn_params = ComponentArray(nn_params)
+    nn_params = Float64.(nn_params)
 
     trajectories = load_trajectories(locations, beta_function)
     p_trained, losses_final = train_ude_multiple_datasets(nn_params, predict_ude, trajectories; maxiters_adam, maxiters_lbfgs)
@@ -58,7 +59,7 @@ function run_model(locations, beta_function; maxiters_adam, maxiters_lbfgs, numb
     end
 
     # Plot losses across iterations
-    loss_plot = plot(losses_final, yscale=:log10, xlabel="Iteration", ylabel="Total loss across trajectories", title="Training loss across iterations for $(sim_name)", legend=false)
+    loss_plot = plot(losses_final, yscale=:log10, xlabel="Iteration", ylabel="Total loss across trajectories (log scale)", title="Training loss across iterations", legend=false)
     savefig(loss_plot, plotsdir("sims", model_name, sim_name, foldername, "training_loss_plot.png"))
 
     # Evaluate the trained model on each trajectory and save the results
@@ -68,7 +69,7 @@ function run_model(locations, beta_function; maxiters_adam, maxiters_lbfgs, numb
     for location in locations
         filename = "synthesised_$(location)"
         # Extract trajectory of infectious individuals
-        dataset = JLD2.load(datadir("exp_pro","synthetic_data", "synthetic_trajectories_exponential", filename*".jld2"))
+        dataset = JLD2.load(datadir("exp_pro","synthetic_data", "synthetic_trajectories_beta_exp", filename*".jld2"))
         data = dataset["infectious"]
         days = dataset["days"]
 
@@ -101,7 +102,7 @@ function run_model(locations, beta_function; maxiters_adam, maxiters_lbfgs, numb
 
         # Evaluate prediction for the trained parameters on the current trajectory
         long_term_prob= remake(prob_ude, u0 = init_state, p = p_all)
-        long_term_pred = solve(long_term_prob, Rosenbrock23(), saveat=1, dense = false)
+        long_term_pred = solve(long_term_prob, Tsit5(), saveat=1, dense = false)
         
         # Convert to a 1 x N matrix
         x_hat = long_term_pred[3, 1:length(data)]
@@ -116,13 +117,13 @@ function run_model(locations, beta_function; maxiters_adam, maxiters_lbfgs, numb
             delta_norm = (log(p_all.delta) - log(1e-6))/(log(1e-2) - log(1e-6))
             beta0_norm = (p_all.R0_reproduction - 1.2)/(6.0 - 1.2)
             zeta_norm  = p_all.zeta/0.05
-            nn_input = Float32.(vcat(fill(beta0_norm, 1, nT), fill(zeta_norm, 1, nT),
+            nn_input = Float64.(vcat(fill(beta0_norm, 1, nT), fill(zeta_norm, 1, nT),
                                      fill(delta_norm, 1, nT), reshape(x_hat ./ p_all.population, 1, nT)))
-            y_hat_input = Float32.(vcat(fill(beta0_norm, 1, nI), fill(zeta_norm, 1, nI),
+            y_hat_input = Float64.(vcat(fill(beta0_norm, 1, nI), fill(zeta_norm, 1, nI),
                                      fill(delta_norm, 1, nI), reshape(I_grid, 1, nI)))
         elseif number_of_nn_input == 1
-            nn_input = Float32.(reshape(x_hat ./ p_all.population, 1, nT))
-            y_hat_input = Float32.(reshape(I_grid, 1, nI))
+            nn_input = Float64.(reshape(x_hat ./ p_all.population, 1, nT))
+            y_hat_input = Float64.(reshape(I_grid, 1, nI))
         end
 
         # Evaluate neural network and extract approximation
@@ -161,14 +162,8 @@ function run_model(locations, beta_function; maxiters_adam, maxiters_lbfgs, numb
         # Create beta plot
 
         # Define beta function
-        
-        if beta_function == "exponential"
-            true_beta = beta_exp(location, data)
-            true_beta_against_xhat = beta_exp(location, I_grid*p_all.population)
-        elseif beta_function == "rational"
-            true_beta = beta_rational(location, data)
-            true_beta_against_xhat = beta_rational(location, I_grid*p_all.population)
-        end
+        true_beta = beta_function(location, data)
+        true_beta_against_xhat = beta_function(location, I_grid*p_all.population)
 
         loss = loss_nmse(beta_traj, true_beta, maximum(true_beta)-minimum(true_beta))
 
@@ -232,7 +227,6 @@ u0 = [0.0, E0, 0.0, R0_recovered, D0]
 SET UP MODEL
 =========================================================#
 
-
 hidden_dims = 5
 input_size = 4
 output_size = 1
@@ -250,18 +244,21 @@ predict_ude = make_predict_ude(prob_ude, train_length)
 DEFINE HYPERPARAMETERS
 =========================================================#
 
-beta_function = "exponential"
-maxiters_adam = 1
-maxiters_lbfgs = 0 
+beta_function = beta_exp
+maxiters_adam = 5000
+maxiters_lbfgs = 2000
 number_of_nn_input = 4
 
 # Define strings for file names and directory for results
 model_name = "ude_multiple"
-sim_name ="UDE_multiple_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_number_of_nn_input=$(number_of_nn_input)"
+locations = ["MA", "MD", "MI"]
+sim_name ="UDE_multiple_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_number_of_nn_input=$(number_of_nn_input)_locations=$(join(locations, "_"))"
 if !isdir(datadir("exp_pro","sims", model_name, sim_name)) 
 	mkpath(datadir("exp_pro","sims", model_name, sim_name))
 end
 
 for i = 1:1
-    run_model(keys(POPULATION), beta_function; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, number_of_nn_input=number_of_nn_input)
+    run_model(locations, beta_function; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, number_of_nn_input=number_of_nn_input)
 end
+
+

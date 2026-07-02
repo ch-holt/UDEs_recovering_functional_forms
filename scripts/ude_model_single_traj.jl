@@ -34,6 +34,7 @@ function run_model(data, u0; maxiters_adam, maxiters_lbfgs)
     # Initialise parameters
     p, st = Lux.setup(rng, beta_network)
     p = ComponentArray(p)
+    p = Float64.(p)
 
     # Combine all parameters into a single object for optimisation
     p_init = ComponentArray(
@@ -53,12 +54,9 @@ function run_model(data, u0; maxiters_adam, maxiters_lbfgs)
     
     # Evaluate final long term results 
     long_term_prob= remake(prob_ude, p = p_trained, tspan = (1.0, 3*365.0), u0 = u0)
-    long_term_pred = solve(long_term_prob, Rosenbrock23(), saveat=1, dense = false)
+    long_term_pred = solve(long_term_prob, Tsit5(), saveat=1, dense = false)
 
     beta_prediction = [beta_network([long_term_pred[3, i] / population], p_trained.nn_params, st_nn)[1][1] for i in 1:length(long_term_pred[3, :])]
-
-	# Save the result
-	fname = "simulation"
 
 	# Append a number to the end of the simulation to allow multiple runs of a single set of hyperparameters for ensemble predictions
 	model_iteration = 1
@@ -155,7 +153,7 @@ location = "MA"
 LOAD DATA
 =========================================================#
 
-dataset = JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_exponential", "synthesised_$(location).jld2"))
+dataset = JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_beta_exp", "synthesised_$(location).jld2"))
 
 # Extract infectious individuals and days from the dataset
 data = dataset["infectious"]

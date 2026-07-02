@@ -15,7 +15,7 @@ function train_ude_single_dataset(p, predict_ude, data, u0; maxiters_adam, maxit
     for iter in 1:maxiters_adam
 
         # Compute the loss, predicted mortalities and gradient function
-        l, back_all = pullback(theta -> loss_ude(theta, predict_ude, data, u0), p)
+        l, back_all = pullback(theta -> loss_ude(theta, predict_ude, data, u0) + regularisation(theta.nn_params), p)
         println("Iteration $iter, Loss: $l")
         # Evaluate the gradient of the loss w.r.t p
         grad = back_all((one(l)))[1]
@@ -48,7 +48,7 @@ function train_ude_single_dataset(p, predict_ude, data, u0; maxiters_adam, maxit
     # Then do LBFGS optimisation
     adtype = Optimization.AutoZygote()
     optfunc   = Optimization.OptimizationFunction(
-                 (theta, _) -> loss_ude(theta, predict_ude, data, u0),
+                 (theta, _) -> loss_ude(theta, predict_ude, data, u0) + regularisation(theta.nn_params),
                  adtype)
     optprob = Optimization.OptimizationProblem(optfunc, best_p)
 
@@ -71,7 +71,7 @@ function train_ude_single_dataset(p, predict_ude, data, u0; maxiters_adam, maxit
         maxiters = maxiters_lbfgs
     )
 
-    final_loss = loss_ude(res.u, predict_ude, data, u0)
+    final_loss = loss_ude(res.u, predict_ude, data, u0) + regularisation(res.u.nn_params)
     if final_loss < best_loss
         best_p = res.u
     end
@@ -133,8 +133,9 @@ function train_ude_multiple_datasets(nn_params, predict_ude, trajectories; maxit
     # Then do LBFGS optimisation
     adtype = Optimization.AutoZygote()
     optfunc   = Optimization.OptimizationFunction(
-                (theta, _) -> combined_loss_ude_lbfgs(theta, predict_ude, trajectories),
-                adtype)
+                (theta, _) -> combined_loss_ude_lbfgs(theta, predict_ude, trajectories)[1],
+                grad = (G, theta, _)-> (G .= combined_loss_ude_lbfgs(theta, predict_ude, trajectories)[2])
+                )
     optprob = Optimization.OptimizationProblem(optfunc, best_nn_params)
 
     iter_lbfgs = Ref(0)
@@ -163,7 +164,10 @@ function train_ude_multiple_datasets(nn_params, predict_ude, trajectories; maxit
         return best_nn_params, total_losses
     end
 
-    final_loss = combined_loss_ude_lbfgs(res.u, predict_ude, trajectories)
+    println("LBFGS finished with retcode: $(res.retcode)") 
+
+    final_loss, _ = combined_loss_ude_lbfgs(res.u, predict_ude, trajectories)
+
     if final_loss < best_loss
         best_nn_params = res.u
     end

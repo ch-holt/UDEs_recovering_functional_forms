@@ -52,7 +52,7 @@ location = "MA"
 filename = "synthesised_$(location).jld2"
 population = POPULATION[location]
 
-dataset = JLD2.load(datadir("synthetic_trajectories_exponential", filename))
+dataset = JLD2.load(datadir("synthetic_trajectories_beta_exp", filename))
 
 # Just use infectious trajectory
 obs = dataset["infectious"]
