@@ -18,7 +18,9 @@ using Plots
 using JLD2
 using Optimization
 using OptimizationOptimJL
-using Random; rng = Random.default_rng()
+using Random
+
+
 
 # Call module
 using UDE_FUNCTIONAL_FORMS
@@ -30,7 +32,7 @@ MAIN FUNCTION TO TRAIN THE UDE AND SAVE THE RESULTS
 
 function run_model(data, u0; maxiters_adam, maxiters_lbfgs)
     println("Starting run: on thread $(Threads.threadid())")
-
+    #rng = Random.seed!(seed)
     # Initialise parameters
     p, st = Lux.setup(rng, beta_network)
     p = ComponentArray(p)
@@ -59,6 +61,7 @@ function run_model(data, u0; maxiters_adam, maxiters_lbfgs)
 	while isdir(datadir("exp_pro","sims", model_name, sim_name, loc_foldername, "simulation_v$(model_iteration)"))
 		model_iteration += 1
 	end
+
     foldername = "simulation_v$(model_iteration)"
 	filename = "synthesised_$(location)"
 
@@ -73,7 +76,7 @@ function run_model(data, u0; maxiters_adam, maxiters_lbfgs)
 
     # Evaluate final long term results 
     long_term_prob= remake(prob_ude, p = p_trained, tspan = (1.0, 3*365.0), u0 = u0)
-    long_term_pred = solve(long_term_prob, Tsit5(), saveat=1, dense = false)
+    long_term_pred = solve(long_term_prob, Rosenbrock23(), saveat=1, dense = false)
 
     # Convert to a 1 x N matrix
     x_hat = long_term_pred[3, 1:length(data)]
@@ -215,7 +218,7 @@ hidden_dims = 5
 input_size = 1
 output_size = 1
 activation_function = gelu
-final_activation_function = sigmoid
+final_activation_function = softplus
 
 beta_network, p_nn_temp, st_nn = build_neural_network(rng, hidden_dims, input_size, output_size, 
                             activation_function, final_activation_function)
@@ -231,10 +234,14 @@ number_of_nn_input = 1
 
 # Define strings for file names and directory for results
 model_name = "ude_single"
-sim_name ="UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_number_of_nn_input=$(number_of_nn_input)"
+sim_name ="UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_number_of_nn_input=$(number_of_nn_input)_finalactivation=$(final_activation_function)"
 if !isdir(datadir("exp_pro","sims", model_name, sim_name)) 
 	mkpath(datadir("exp_pro","sims", model_name, sim_name))
 end
+
+seed_grid = rand(1:100000, 50)
+
+#for i = 1:length(seed_grid)
 
 
 for i = 1:1

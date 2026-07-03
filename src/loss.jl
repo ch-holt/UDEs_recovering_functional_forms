@@ -35,7 +35,7 @@ end
 
 function regularisation(nn_params)
     # L2 penalty on NN weights (regularisation)
-    l2_penalty = 1e-5 * sum(abs2, nn_params)
+    l2_penalty = 1e-6 * sum(abs2, nn_params)
 
     return l2_penalty
 end
