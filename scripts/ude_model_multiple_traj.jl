@@ -30,7 +30,7 @@ using UDE_FUNCTIONAL_FORMS
 MAIN FUNCTION TO TRAIN THE UDE AND SAVE THE RESULTS
 =========================================================# 
 
-function run_model(locations, beta_function; maxiters_adam, maxiters_lbfgs, number_of_nn_input)
+function run_model(locations, beta_function, beta_network; maxiters_adam, maxiters_lbfgs, number_of_nn_inputs)
     println("Starting run: on thread $(Threads.threadid())")
 
     # Initialise parameters
@@ -39,7 +39,7 @@ function run_model(locations, beta_function; maxiters_adam, maxiters_lbfgs, numb
     nn_params = Float64.(nn_params)
 
     trajectories = load_trajectories(locations, beta_function)
-    p_trained, losses_final = train_ude_multiple_datasets(nn_params, predict_ude, trajectories; maxiters_adam, maxiters_lbfgs)
+    p_trained, losses_final = train_ude_multiple_datasets(nn_params, predict_ude, trajectories, beta_network, st, number_of_nn_inputs; maxiters_adam, maxiters_lbfgs)
     
     # Save the trained parameters and losses for the combined trajectories
 
@@ -114,7 +114,7 @@ function run_model(locations, beta_function; maxiters_adam, maxiters_lbfgs, numb
         # Define input for SR via I_grid
         I_grid = collect(range(0, 1; length=1000))
         nI = length(I_grid)
-        if number_of_nn_input == 4
+        if number_of_nn_inputs == 4
             delta_norm = (log(p_all.delta) - log(1e-6))/(log(1e-2) - log(1e-6))
             beta0_norm = (p_all.R0_reproduction - 1.2)/(6.0 - 1.2)
             zeta_norm  = p_all.zeta/0.05
@@ -122,7 +122,7 @@ function run_model(locations, beta_function; maxiters_adam, maxiters_lbfgs, numb
                                      fill(delta_norm, 1, nT), reshape(x_hat ./ p_all.population, 1, nT)))
             y_hat_input = Float64.(vcat(fill(beta0_norm, 1, nI), fill(zeta_norm, 1, nI),
                                      fill(delta_norm, 1, nI), reshape(I_grid, 1, nI)))
-        elseif number_of_nn_input == 1
+        elseif number_of_nn_inputs == 1
             nn_input = Float64.(reshape(x_hat ./ p_all.population, 1, nT))
             y_hat_input = Float64.(reshape(I_grid, 1, nI))
         end
@@ -169,7 +169,7 @@ function run_model(locations, beta_function; maxiters_adam, maxiters_lbfgs, numb
         beta_plot = plot(days[1:length(beta_traj)], true_beta, color=:blue, linewidth=2, label="True beta", 
         xlabel="Day", ylabel="Beta", title="Beta trajectory for $(location)", legend=:topright)
         plot!(beta_plot, days[1:length(beta_traj)], beta_traj, color=:red, linewidth=2, label="Predicted beta")
-        annotate!(beta_plot, days[round(Int, length(beta_traj)/2)], maximum(true_beta), text("NMSE: $(round(loss, digits=4))", :black))
+        annotate!(beta_plot, days[round(Int, length(beta_traj)/2)], maximum(true_beta), text("NMSE: $(round(loss, sigdigits=3))", :black))
 
         # Save the plot
         savefig(beta_plot, joinpath(plot_dir, "beta_plot.png"))
@@ -187,7 +187,7 @@ function run_model(locations, beta_function; maxiters_adam, maxiters_lbfgs, numb
         beta_against_xhat_plot = plot(I_grid, true_beta_against_xhat, color=:blue, linewidth=2, label="True beta", 
         xlabel="I/N", ylabel="Beta", title="Beta trajectory for $(location)", legend=:topright)
         plot!(beta_against_xhat_plot, I_grid, y_hat, color=:red, linewidth=2, label="Predicted beta")
-        annotate!(beta_against_xhat_plot, I_grid[round(Int, length(y_hat)/2)], maximum(true_beta_against_xhat), text("NMSE: $(round(loss_I_grid, digits=4))", :black))
+        annotate!(beta_against_xhat_plot, I_grid[round(Int, length(y_hat)/2)], maximum(true_beta_against_xhat), text("NMSE: $(round(loss_I_grid, sigdigits=3))", :black))
 
         # Save the plot
         savefig(beta_against_xhat_plot, joinpath(plot_dir, "beta_against_xhat_plot.png"))
@@ -247,20 +247,20 @@ DEFINE HYPERPARAMETERS
 =========================================================#
 
 beta_function = beta_exp
-maxiters_adam = 5000
-maxiters_lbfgs = 2000
-number_of_nn_input = 4
+maxiters_adam = 10
+maxiters_lbfgs = 10
+number_of_nn_inputs = 4
 
 # Define strings for file names and directory for results
 model_name = "ude_multiple"
 locations = ["MA"]
-sim_name ="UDE_multiple_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_number_of_nn_input=$(number_of_nn_input)_locations=$(join(locations, "_"))"
+sim_name ="UDE_multiple_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_number_of_nn_input=$(number_of_nn_inputs)_locations=$(join(locations, "_"))_testing"
 if !isdir(datadir("exp_pro","sims", model_name, sim_name)) 
 	mkpath(datadir("exp_pro","sims", model_name, sim_name))
 end
 
 for i = 1:1
-    run_model(locations, beta_function; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, number_of_nn_input=number_of_nn_input)
+    run_model(locations, beta_function, beta_network; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, number_of_nn_inputs=number_of_nn_inputs)
 end
 
 

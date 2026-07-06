@@ -20,8 +20,6 @@ using Optimization
 using OptimizationOptimJL
 using Random
 
-
-
 # Call module
 using UDE_FUNCTIONAL_FORMS
 
@@ -30,9 +28,10 @@ using UDE_FUNCTIONAL_FORMS
 MAIN FUNCTION TO TRAIN THE UDE AND SAVE THE RESULTS
 =========================================================# 
 
-function run_model(data, u0; maxiters_adam, maxiters_lbfgs)
+function run_model(beta_function, data, u0, seed, predict_ude, beta_network, prob_ude; maxiters_adam, maxiters_lbfgs, number_of_nn_inputs, adam_learning_rate, learning_bias_bool)
     println("Starting run: on thread $(Threads.threadid())")
-    #rng = Random.seed!(seed)
+    rng = Random.seed!(seed)
+
     # Initialise parameters
     p, st = Lux.setup(rng, beta_network)
     p = ComponentArray(p)
@@ -49,10 +48,26 @@ function run_model(data, u0; maxiters_adam, maxiters_lbfgs)
     )
 
     # Make sure to start with a stable parameterization
-    l_init = loss_ude(p_init, predict_ude, data, u0)
-    println("Initial loss: $l_init")
+    l_init = loss_ude(p_init, predict_ude, data, u0, beta_network, st_nn, number_of_nn_inputs, learning_bias_bool)
+    while l_init > 1e-3
+		println("Unstable initial parameterization. Restarting..., $l_init")
+        # Initialise parameters
+        p, st = Lux.setup(rng, beta_network)
+        p = ComponentArray(p)
+        p = Float64.(p)
 
-    p_trained, losses_final = train_ude_single_dataset(p_init, predict_ude, data, u0; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs)
+        # Combine all parameters into a single object for optimisation
+        p_init = ComponentArray(
+            nn_params = p,
+            gamma = gamma,
+            sigma = sigma,
+            delta = delta,
+            tmax = train_length,
+            population = population
+        )
+        l_init = loss_ude(p_init, predict_ude, data, u0, beta_network, st_nn, number_of_nn_inputs, learning_bias_bool)
+	end
+    p_trained, losses_final = train_ude_single_dataset(p_init, predict_ude, data, u0, beta_network, st, number_of_nn_inputs, learning_bias_bool; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, adam_learning_rate=adam_learning_rate)
 
     loc_foldername = "synthesised_$(location)"
 
@@ -62,7 +77,7 @@ function run_model(data, u0; maxiters_adam, maxiters_lbfgs)
 		model_iteration += 1
 	end
 
-    foldername = "simulation_v$(model_iteration)"
+    foldername = "simulation_v$(model_iteration)_seed=$(seed)"
 	filename = "synthesised_$(location)"
 
     # Within the plots folder create a folder for each trajectory
@@ -92,7 +107,7 @@ function run_model(data, u0; maxiters_adam, maxiters_lbfgs)
     y_hat_input = Float64.(reshape(I_grid, 1, nI))
 
 
-    beta_traj = vec(beta_network(nn_input, p_trained.nn_params, st_nn)[1])
+    beta_traj = vec(beta_network(nn_input, p_trained.nn_params, st)[1])
 
     mkpath(datadir("exp_pro","sims", model_name, sim_name, loc_foldername, foldername))
 
@@ -110,9 +125,12 @@ function run_model(data, u0; maxiters_adam, maxiters_lbfgs)
     end
 
     # Create trajectory plot
+    loss_traj = loss_nmse(x_hat, data, p_init.population)
+
     traj_plot = plot(days[1:length(data)], data[1:length(data)], color=:black, markersize=2, label="Data", 
     xlabel="Day", ylabel="Infectious individuals", title="Infectious trajectory for $(location)", legend=:topright)
     plot!(traj_plot, days[1:length(data)], x_hat, color=:red, linewidth=2, label="Predicted trajectory")
+    annotate!(traj_plot, days[round(Int, length(data)/2)], maximum(data), text("NMSE: $(round(loss_traj, sigdigits=3))", :black))
 
     # Save the plot
     savefig(traj_plot, joinpath(plot_dir, "traj_plot.png"))
@@ -128,7 +146,7 @@ function run_model(data, u0; maxiters_adam, maxiters_lbfgs)
     beta_plot = plot(days[1:length(beta_traj)], true_beta, color=:blue, linewidth=2, label="True beta", 
     xlabel="Day", ylabel="Beta", title="Beta trajectory for $(location)", legend=:topright)
     plot!(beta_plot, days[1:length(beta_traj)], beta_traj, color=:red, linewidth=2, label="Predicted beta")
-    annotate!(beta_plot, days[round(Int, length(beta_traj)/2)], maximum(true_beta), text("NMSE: $(round(loss, digits=4))", :black))
+    annotate!(beta_plot, days[round(Int, length(beta_traj)/2)], maximum(true_beta), text("NMSE: $(round(loss, sigdigits=3))", :black))
 
     # Save the plot
     savefig(beta_plot, joinpath(plot_dir, "beta_plot.png"))
@@ -139,14 +157,14 @@ function run_model(data, u0; maxiters_adam, maxiters_lbfgs)
     # Create beta plot against x_hat
     
     # Evaluate neural network and extract approximation
-    y_hat = vec(beta_network(y_hat_input, p_trained.nn_params, st_nn)[1])
+    y_hat = vec(beta_network(y_hat_input, p_trained.nn_params, st)[1])
     
     loss_I_grid = loss_nmse(y_hat, true_beta_against_xhat, maximum(true_beta_against_xhat)-minimum(true_beta_against_xhat))
 
     beta_against_xhat_plot = plot(I_grid, true_beta_against_xhat, color=:blue, linewidth=2, label="True beta", 
     xlabel="I/N", ylabel="Beta", title="Beta trajectory for $(location)", legend=:topright)
     plot!(beta_against_xhat_plot, I_grid, y_hat, color=:red, linewidth=2, label="Predicted beta")
-    annotate!(beta_against_xhat_plot, I_grid[round(Int, length(y_hat)/2)], maximum(true_beta_against_xhat), text("NMSE: $(round(loss_I_grid, digits=4))", :black))
+    annotate!(beta_against_xhat_plot, I_grid[round(Int, length(y_hat)/2)], maximum(true_beta_against_xhat), text("NMSE: $(round(loss_I_grid, sigdigits=3))", :black))
 
     # Save the plot
     savefig(beta_against_xhat_plot, joinpath(plot_dir, "beta_against_xhat_plot.png"))
@@ -220,30 +238,33 @@ output_size = 1
 activation_function = gelu
 final_activation_function = softplus
 
-beta_network, p_nn_temp, st_nn = build_neural_network(rng, hidden_dims, input_size, output_size, 
-                            activation_function, final_activation_function)
-
-seird_nn! = make_seird_nn(beta_network, st_nn, sigma, gamma, input_size)
-prob_ude = ODEProblem(seird_nn!, u0, tspan, p_nn_temp)
-predict_ude = make_predict_ude(prob_ude, train_length)
-
 beta_function = beta_exp
-maxiters_adam = 5000
-maxiters_lbfgs = 2000
-number_of_nn_input = 1
+maxiters_adam = 10
+maxiters_lbfgs = 10
+number_of_nn_inputs = 1
+
+adam_learning_rate = 1e-3
+learning_bias_bool = true
 
 # Define strings for file names and directory for results
 model_name = "ude_single"
-sim_name ="UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_number_of_nn_input=$(number_of_nn_input)_finalactivation=$(final_activation_function)"
+sim_name ="UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_learning_rate=$(adam_learning_rate)_lbfgs=$(maxiters_lbfgs)_bias=$(learning_bias_bool)_number_of_nn_input=$(number_of_nn_inputs)_finalactivation=$(final_activation_function)"
 if !isdir(datadir("exp_pro","sims", model_name, sim_name)) 
 	mkpath(datadir("exp_pro","sims", model_name, sim_name))
 end
 
 seed_grid = rand(1:100000, 50)
 
-#for i = 1:length(seed_grid)
+for i = 1:length(seed_grid)
+    
+    rng = Random.seed!(seed_grid[i])
 
+    beta_network, p_nn_temp, st_nn = build_neural_network(rng, hidden_dims, input_size, output_size, 
+                                activation_function, final_activation_function)
 
-for i = 1:1
-    run_model(data, u0; maxiters_adam = maxiters_adam, maxiters_lbfgs = maxiters_lbfgs)
+    seird_nn! = make_seird_nn(beta_network, st_nn, sigma, gamma, input_size)
+    prob_ude = ODEProblem(seird_nn!, u0, tspan, p_nn_temp)
+    predict_ude = make_predict_ude(prob_ude, train_length)
+
+    run_model(beta_function, data, u0, seed_grid[i], predict_ude, beta_network, prob_ude; maxiters_adam = maxiters_adam, maxiters_lbfgs = maxiters_lbfgs, number_of_nn_inputs=number_of_nn_inputs, adam_learning_rate=adam_learning_rate, learning_bias_bool=learning_bias_bool)
 end

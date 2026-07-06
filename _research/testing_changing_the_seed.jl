@@ -22,7 +22,7 @@ CONFIGURATION — edit these to match the sim you want
 
 location    = "MA"
 model_name  = "ude_single"
-sim_name    = "UDE_single_beta=beta_exp_adam=5000_lbfgs=2000_number_of_nn_input=1_finalactivation=softplus"
+sim_name    = "UDE_single_beta=beta_exp_adam=5000_lbfgs=2000_number_of_nn_input=1_finalactivation=softplus_seedv3"
 
 # Must match the architecture used in training
 hidden_dims          = 5
@@ -45,7 +45,7 @@ FIND ALL SEED SIMULATION FOLDERS
 
 loc_foldername = "synthesised_$(location)"
 sim_dir        = datadir("exp_pro", "sims", model_name, sim_name, loc_foldername)
-seed_folders   = filter(f -> occursin(r"simulation_v\d+_seed=", f), readdir(sim_dir))
+seed_folders   = filter(f -> occursin(r"simulation_v1+_seed=", f), readdir(sim_dir))
 
 println("Found $(length(seed_folders)) seed simulations in $(sim_name)")
 
@@ -120,7 +120,7 @@ end
 SAVE
 =========================================================#
 
-save_dir = plotsdir("sims", model_name, "sensitivity_of_seed")
+save_dir = plotsdir("sims", model_name, "sensitivity_of_seedv3")
 mkpath(save_dir)
 
 savefig(traj_plot,      joinpath(save_dir, "$(sim_name)_traj_overlay.png"))

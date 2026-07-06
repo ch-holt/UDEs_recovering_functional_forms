@@ -14,7 +14,7 @@ end
 LOSS FUNCTION FOR SINGLE DATASET USING NMSE
 ==============================================================# 
 
-function loss_ude(p_all, predict_ude, data, u0)
+function loss_ude(p_all, predict_ude, data, u0, beta_network, st_nn, valn, learning_bias_bool)
     pred = predict_ude(p_all, u0)
 
     if isnothing(pred)
@@ -30,7 +30,18 @@ function loss_ude(p_all, predict_ude, data, u0)
     # Mean squared error
     nmse = loss_nmse(pred_correct_length, data_correct_length, p_all.population)
 
-    return nmse
+    # Add learning bias to soft constrain beta(1)=0
+    if valn == 1
+        learning_bias = 1e-6 * relu((beta_network([1.0], p_all.nn_params, st_nn)[1][1]))
+    elseif valn == 4
+        learning_bias = 1e-6 * relu((beta_network([p_all.beta0, p_all.zeta, p_all.delta, 1.0], p_all.nn_params, st_nn)[1][1]))
+    end
+
+    if learning_bias_bool
+        return nmse + learning_bias
+    else
+        return nmse
+    end
 end
 
 function regularisation(nn_params)
@@ -44,7 +55,7 @@ end
 COMBINED LOSS FOR MULTIPLE DATASETS USING ADAM OPTIMISER
 ==============================================================# 
 
-function combined_loss_ude_adam(nn_params, predict_ude, trajectories)
+function combined_loss_ude_adam(beta_network, st_nn, nn_params, number_of_nn_inputs, predict_ude, trajectories)
     
     gamma = 1/10
     println("Evaluating combined loss for current parameters across $(length(trajectories)) trajectories...")
@@ -83,7 +94,7 @@ function combined_loss_ude_adam(nn_params, predict_ude, trajectories)
         println("Evaluating trajectory $i")
 
         # Compute the loss and gradient for the current trajectory
-        l, back_all = pullback(theta -> loss_ude(theta, predict_ude, data, u0), p_all)
+        l, back_all = pullback(theta -> loss_ude(theta, predict_ude, data, u0, beta_network, st_nn, number_of_nn_inputs), p_all)
 
         if !isfinite(l)
             return 1e20, nothing
@@ -124,7 +135,7 @@ end
 COMBINED LOSS FOR MULTIPLE DATASETS USING LBFGS
 ==============================================================# 
 
-function combined_loss_ude_lbfgs(nn_params, predict_ude, trajectories)
+function combined_loss_ude_lbfgs(beta_network, st_nn, nn_params, number_of_nn_inputs, predict_ude, trajectories)
     
     gamma = 1/10
     println("Evaluating combined LBFGS loss for current parameters across $(length(trajectories)) trajectories...")
@@ -160,7 +171,7 @@ function combined_loss_ude_lbfgs(nn_params, predict_ude, trajectories)
 
         println("Evaluating trajectory $i")
 
-        l, back_all = pullback(theta -> loss_ude(theta, predict_ude, data, u0), p_all)
+        l, back_all = pullback(theta -> loss_ude(theta, predict_ude, data, u0, beta_network, st_nn, number_of_nn_inputs), p_all)
         if !isfinite(l)
            error("ODE solve failed for trajectory $i. Loss: $l")
         end
