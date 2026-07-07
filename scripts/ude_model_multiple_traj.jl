@@ -164,7 +164,7 @@ function run_model(locations, beta_function, beta_network; maxiters_adam, maxite
         true_beta = beta_function(location, data)
         true_beta_against_xhat = beta_function(location, I_grid*p_all.population)
 
-        loss = loss_nmse(beta_traj, true_beta, maximum(true_beta)-minimum(true_beta))
+        loss = loss_nmse(beta_traj, true_beta)
 
         beta_plot = plot(days[1:length(beta_traj)], true_beta, color=:blue, linewidth=2, label="True beta", 
         xlabel="Day", ylabel="Beta", title="Beta trajectory for $(location)", legend=:topright)
@@ -182,7 +182,7 @@ function run_model(locations, beta_function, beta_network; maxiters_adam, maxite
         # Evaluate neural network and extract approximation
         y_hat = vec(beta_network(y_hat_input, p_trained, st_nn)[1])
         
-        loss_I_grid = loss_nmse(y_hat, true_beta_against_xhat, maximum(true_beta_against_xhat)-minimum(true_beta_against_xhat))
+        loss_I_grid = loss_nmse(y_hat, true_beta_against_xhat)
 
         beta_against_xhat_plot = plot(I_grid, true_beta_against_xhat, color=:blue, linewidth=2, label="True beta", 
         xlabel="I/N", ylabel="Beta", title="Beta trajectory for $(location)", legend=:topright)

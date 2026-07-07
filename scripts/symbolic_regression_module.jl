@@ -108,9 +108,9 @@ function symbolic_regression(SR_input_pair, SR_output_pair, sim_name, location, 
     # Evaluate the SR output pair for number of days (e.g. the nn output for the true trajectory)
     target_beta_days = reshape(nn_output_days, :, 1)
 
-    nmse_SR_true_days = Functions.loss_nmse(SR_evaluated_beta_days, true_beta_days_traj, maximum(true_beta_days_traj)-minimum(true_beta_days_traj))
-    nmse_SR_input_days = Functions.loss_nmse(SR_evaluated_beta_days, target_beta_days, maximum(true_beta_days_traj)-minimum(true_beta_days_traj))
-    nmse_input_true_days = Functions.loss_nmse(target_beta_days, true_beta_days_traj, maximum(true_beta_days_traj)-minimum(true_beta_days_traj))
+    nmse_SR_true_days = loss_nmse(SR_evaluated_beta_days, true_beta_days_traj)
+    nmse_SR_input_days = loss_nmse(SR_evaluated_beta_days, target_beta_days)
+    nmse_input_true_days = loss_nmse(target_beta_days, true_beta_days_traj)
 
     p_comparison = plot(days, true_beta_days_traj[1:length(days)], lw=2.5, label="True β", color=:black)
     
@@ -172,9 +172,9 @@ function symbolic_regression(SR_input_pair, SR_output_pair, sim_name, location, 
         end
     end
 
-    nmse_SR_true = Functions.loss_nmse(SR_evaluated_beta_1000, true_beta_1000, maximum(true_beta_1000)-minimum(true_beta_1000))
-    nmse_SR_input = Functions.loss_nmse(SR_evaluated_beta_1000, SR_target_beta_1000, maximum(true_beta_1000)-minimum(true_beta_1000))
-    nmse_input_true = Functions.loss_nmse(SR_target_beta_1000, true_beta_1000, maximum(true_beta_1000)-minimum(true_beta_1000))
+    nmse_SR_true = loss_nmse(SR_evaluated_beta_1000, true_beta_1000)
+    nmse_SR_input = loss_nmse(SR_evaluated_beta_1000, SR_target_beta_1000)
+    nmse_input_true = loss_nmse(SR_target_beta_1000, true_beta_1000)
 
     x_hat_vs_beta = plot(SR_input_pair_infectious_1000, true_beta_1000, lw=2.5, label="True β", color=:black)
 

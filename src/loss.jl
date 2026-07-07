@@ -2,7 +2,7 @@
 NMSE LOSS FUNCTION
 ==============================================================# 
 
-function loss_nmse(pred, data, normalising_factor)
+function loss_nmse(pred, data)
 
     # Mean squared error
     #nmse = sum((pred ./ normalising_factor .- data ./ normalising_factor).^2)/length(data)
@@ -29,7 +29,7 @@ function loss_ude(p_all, predict_ude, data, u0, beta_network, st_nn, valn, learn
     data_correct_length = data[1:n]
 
     # Mean squared error
-    nmse = loss_nmse(pred_correct_length, data_correct_length, p_all.population)
+    nmse = loss_nmse(pred_correct_length, data_correct_length)
 
     # Add learning bias to soft constrain beta(1)=0
     if valn == 1
