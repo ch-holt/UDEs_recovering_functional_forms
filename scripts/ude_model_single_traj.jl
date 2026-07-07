@@ -49,6 +49,7 @@ function run_model(beta_function, data, u0, seed, predict_ude, beta_network, pro
 
     # Make sure to start with a stable parameterization
     l_init = loss_ude(p_init, predict_ude, data, u0, beta_network, st_nn, number_of_nn_inputs, learning_bias_bool)
+    #========
     while l_init > 1e-3
 		println("Unstable initial parameterization. Restarting..., $l_init")
         # Initialise parameters
@@ -67,6 +68,7 @@ function run_model(beta_function, data, u0, seed, predict_ude, beta_network, pro
         )
         l_init = loss_ude(p_init, predict_ude, data, u0, beta_network, st_nn, number_of_nn_inputs, learning_bias_bool)
 	end
+    ======#
     p_trained, losses_final = train_ude_single_dataset(p_init, predict_ude, data, u0, beta_network, st, number_of_nn_inputs, learning_bias_bool; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, adam_learning_rate=adam_learning_rate)
 
     loc_foldername = "synthesised_$(location)"
@@ -239,8 +241,8 @@ activation_function = gelu
 final_activation_function = softplus
 
 beta_function = beta_exp
-maxiters_adam = 10
-maxiters_lbfgs = 10
+maxiters_adam = 2500
+maxiters_lbfgs = 2000
 number_of_nn_inputs = 1
 
 adam_learning_rate = 1e-3
@@ -248,12 +250,12 @@ learning_bias_bool = true
 
 # Define strings for file names and directory for results
 model_name = "ude_single"
-sim_name ="UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_learning_rate=$(adam_learning_rate)_lbfgs=$(maxiters_lbfgs)_bias=$(learning_bias_bool)_number_of_nn_input=$(number_of_nn_inputs)_finalactivation=$(final_activation_function)"
+sim_name ="UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_learning_rate=$(adam_learning_rate)_lbfgs=$(maxiters_lbfgs)_bias=$(learning_bias_bool)_number_of_nn_input=$(number_of_nn_inputs)_finalactivation=$(final_activation_function)_nmse_change"
 if !isdir(datadir("exp_pro","sims", model_name, sim_name)) 
 	mkpath(datadir("exp_pro","sims", model_name, sim_name))
 end
 
-seed_grid = rand(1:100000, 50)
+seed_grid = rand(1:100000, 100)
 
 for i = 1:length(seed_grid)
     
@@ -268,3 +270,7 @@ for i = 1:length(seed_grid)
 
     run_model(beta_function, data, u0, seed_grid[i], predict_ude, beta_network, prob_ude; maxiters_adam = maxiters_adam, maxiters_lbfgs = maxiters_lbfgs, number_of_nn_inputs=number_of_nn_inputs, adam_learning_rate=adam_learning_rate, learning_bias_bool=learning_bias_bool)
 end
+
+
+
+

@@ -5,8 +5,9 @@ NMSE LOSS FUNCTION
 function loss_nmse(pred, data, normalising_factor)
 
     # Mean squared error
+    #nmse = sum((pred ./ normalising_factor .- data ./ normalising_factor).^2)/length(data)
+    normalising_factor = maximum(data) - minimum(data)
     nmse = sum((pred ./ normalising_factor .- data ./ normalising_factor).^2)/length(data)
-
     return nmse
 end
 
@@ -36,7 +37,7 @@ function loss_ude(p_all, predict_ude, data, u0, beta_network, st_nn, valn, learn
     elseif valn == 4
         learning_bias = 1e-6 * relu((beta_network([p_all.beta0, p_all.zeta, p_all.delta, 1.0], p_all.nn_params, st_nn)[1][1]))
     end
-
+println(learning_bias)
     if learning_bias_bool
         return nmse + learning_bias
     else
