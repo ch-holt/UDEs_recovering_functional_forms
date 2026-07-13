@@ -113,10 +113,6 @@ function run_model(beta_function, data, u0, seed, predict_ude, beta_network, pro
 
     mkpath(datadir("exp_pro","sims", model_name, sim_name, loc_foldername, foldername))
 
-	JLD2.save(datadir("exp_pro","sims", model_name, sim_name, loc_foldername, foldername, "results.jld2"),
-		"p", p_trained, "losses", losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_traj,
-		"days", days)
-
     #========================
     CREATE PLOTS
     ========================#
@@ -127,7 +123,7 @@ function run_model(beta_function, data, u0, seed, predict_ude, beta_network, pro
     end
 
     # Create trajectory plot
-    loss_traj = loss_nmse(x_hat, data, p_init.population)
+    loss_traj = loss_nmse(x_hat, data)
 
     traj_plot = plot(days[1:length(data)], data[1:length(data)], color=:black, markersize=2, label="Data", 
     xlabel="Day", ylabel="Infectious individuals", title="Infectious trajectory for $(location)", legend=:topright)
@@ -143,12 +139,12 @@ function run_model(beta_function, data, u0, seed, predict_ude, beta_network, pro
     true_beta = beta_function(location, data)
     true_beta_against_xhat = beta_function(location, I_grid*p_init.population)
 
-    loss = loss_nmse(beta_traj, true_beta, maximum(true_beta)-minimum(true_beta))
+    loss_beta = loss_nmse(beta_traj, true_beta)
 
     beta_plot = plot(days[1:length(beta_traj)], true_beta, color=:blue, linewidth=2, label="True beta", 
     xlabel="Day", ylabel="Beta", title="Beta trajectory for $(location)", legend=:topright)
     plot!(beta_plot, days[1:length(beta_traj)], beta_traj, color=:red, linewidth=2, label="Predicted beta")
-    annotate!(beta_plot, days[round(Int, length(beta_traj)/2)], maximum(true_beta), text("NMSE: $(round(loss, sigdigits=3))", :black))
+    annotate!(beta_plot, days[round(Int, length(beta_traj)/2)], maximum(true_beta), text("NMSE: $(round(loss_beta, sigdigits=3))", :black))
 
     # Save the plot
     savefig(beta_plot, joinpath(plot_dir, "beta_plot.png"))
@@ -161,7 +157,7 @@ function run_model(beta_function, data, u0, seed, predict_ude, beta_network, pro
     # Evaluate neural network and extract approximation
     y_hat = vec(beta_network(y_hat_input, p_trained.nn_params, st)[1])
     
-    loss_I_grid = loss_nmse(y_hat, true_beta_against_xhat, maximum(true_beta_against_xhat)-minimum(true_beta_against_xhat))
+    loss_I_grid = loss_nmse(y_hat, true_beta_against_xhat)
 
     beta_against_xhat_plot = plot(I_grid, true_beta_against_xhat, color=:blue, linewidth=2, label="True beta", 
     xlabel="I/N", ylabel="Beta", title="Beta trajectory for $(location)", legend=:topright)
@@ -171,7 +167,11 @@ function run_model(beta_function, data, u0, seed, predict_ude, beta_network, pro
     # Save the plot
     savefig(beta_against_xhat_plot, joinpath(plot_dir, "beta_against_xhat_plot.png"))
 
-    
+    mkpath(datadir("exp_pro","sims", model_name, sim_name, loc_foldername, foldername))
+	JLD2.save(datadir("exp_pro","sims", model_name, sim_name, loc_foldername, foldername, "results.jld2"),
+		"p", p_trained, "losses", losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_traj,
+		"days", days, "seed", seed, "loss_traj", loss_traj, "loss_beta", loss_beta, "loss_I_grid", loss_I_grid)
+
 	println("Finished run: $(location) on thread $(Threads.threadid())")
 
 	return nothing
@@ -241,7 +241,7 @@ activation_function = gelu
 final_activation_function = softplus
 
 beta_function = beta_exp
-maxiters_adam = 2500
+maxiters_adam = 10000
 maxiters_lbfgs = 2000
 number_of_nn_inputs = 1
 

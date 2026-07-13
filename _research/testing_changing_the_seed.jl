@@ -22,7 +22,7 @@ CONFIGURATION — edit these to match the sim you want
 
 location    = "MA"
 model_name  = "ude_single"
-sim_name    = "UDE_single_beta=beta_exp_adam=5000_lbfgs=2000_number_of_nn_input=1_finalactivation=softplus_seedv3"
+sim_name    = "UDE_single_beta=beta_exp_adam=2500_learning_rate=0.001_lbfgs=2000_bias=true_number_of_nn_input=1_finalactivation=softplus_nmse_change"
 
 # Must match the architecture used in training
 hidden_dims          = 5
@@ -120,11 +120,11 @@ end
 SAVE
 =========================================================#
 
-save_dir = plotsdir("sims", model_name, "sensitivity_of_seedv3")
+save_dir = plotsdir("sims", model_name, sim_name, "synthesised_$(location)")
 mkpath(save_dir)
 
-savefig(traj_plot,      joinpath(save_dir, "$(sim_name)_traj_overlay.png"))
-savefig(beta_time_plot, joinpath(save_dir, "$(sim_name)_beta_time_overlay.png"))
-savefig(beta_01_plot,   joinpath(save_dir, "$(sim_name)_beta_01_overlay.png"))
+savefig(traj_plot,      joinpath(save_dir, "traj_overlay.png"))
+savefig(beta_time_plot, joinpath(save_dir, "beta_time_overlay.png"))
+savefig(beta_01_plot,   joinpath(save_dir, "beta_01_overlay.png"))
 
 println("Done — 3 plots saved to:\n  $(save_dir)")
