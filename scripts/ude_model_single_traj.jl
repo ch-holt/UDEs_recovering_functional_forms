@@ -28,7 +28,7 @@ using UDE_FUNCTIONAL_FORMS
 MAIN FUNCTION TO TRAIN THE UDE AND SAVE THE RESULTS
 =========================================================# 
 
-function run_model(beta_function, data, u0, seed, predict_ude, beta_network, prob_ude; maxiters_adam, maxiters_lbfgs, number_of_nn_inputs, adam_learning_rate, learning_bias_bool)
+function run_model(beta_function, data, u0, seed, predict_ude, beta_network, prob_ude; maxiters_adam, maxiters_lbfgs, number_of_nn_inputs, adam_learning_rate)
     println("Starting run: on thread $(Threads.threadid())")
     rng = Random.seed!(seed)
 
@@ -138,9 +138,18 @@ function run_model(beta_function, data, u0, seed, predict_ude, beta_network, pro
     
     loss_I_grid = loss_nmse(y_hat, true_beta_against_xhat)
 
+    # Identify I/N positions in observed training data where beta is minimum and maximum
+    observed_I_over_N = data ./ p_init.population
+    idx_beta_min = argmin(true_beta)
+    idx_beta_max = argmax(true_beta)
+    x_at_beta_min = observed_I_over_N[idx_beta_min]
+    x_at_beta_max = observed_I_over_N[idx_beta_max]
+
     beta_against_xhat_plot = plot(I_grid, true_beta_against_xhat, color=:blue, linewidth=2, label="True beta", 
     xlabel="I/N", ylabel="Beta", title="Beta trajectory for $(location)", legend=:topright)
     plot!(beta_against_xhat_plot, I_grid, y_hat, color=:red, linewidth=2, label="Predicted beta")
+    vline!(beta_against_xhat_plot, [x_at_beta_min], linestyle=:dot, color=:black, linewidth=2, label=false)
+    vline!(beta_against_xhat_plot, [x_at_beta_max], linestyle=:dot, color=:gray40, linewidth=2, label=false)
     annotate!(beta_against_xhat_plot, I_grid[round(Int, length(y_hat)/2)], maximum(true_beta_against_xhat), text("NMSE: $(round(loss_I_grid, sigdigits=3))", :black))
 
     # Save the plot
@@ -220,15 +229,15 @@ activation_function = gelu
 final_activation_function = softplus
 
 beta_function = beta_exp
-maxiters_adam = 2500
-maxiters_lbfgs = 2000
+maxiters_adam = 20
+maxiters_lbfgs = 20
 number_of_nn_inputs = 1
 
 adam_learning_rate = 1e-3
 
 # Define strings for file names and directory for results
 model_name = "ude_single"
-sim_name ="UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_learning_rate=$(adam_learning_rate)_lbfgs=$(maxiters_lbfgs)_bias=$(learning_bias_bool)_number_of_nn_input=$(number_of_nn_inputs)_finalactivation=$(final_activation_function)_test_val_5_5"
+sim_name ="UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_learning_rate=$(adam_learning_rate)_lbfgs=$(maxiters_lbfgs)_number_of_nn_input=$(number_of_nn_inputs)_finalactivation=$(final_activation_function)_test"
 if !isdir(datadir("exp_pro","sims", model_name, sim_name)) 
 	mkpath(datadir("exp_pro","sims", model_name, sim_name))
 end
@@ -246,7 +255,7 @@ for i = 1:length(seed_grid)
     prob_ude = ODEProblem(seird_nn!, u0, tspan, p_nn_temp)
     predict_ude = make_predict_ude(prob_ude, train_length)
 
-    run_model(beta_function, data, u0, seed_grid[i], predict_ude, beta_network, prob_ude; maxiters_adam = maxiters_adam, maxiters_lbfgs = maxiters_lbfgs, number_of_nn_inputs=number_of_nn_inputs, adam_learning_rate=adam_learning_rate, learning_bias_bool=learning_bias_bool)
+    run_model(beta_function, data, u0, seed_grid[i], predict_ude, beta_network, prob_ude; maxiters_adam = maxiters_adam, maxiters_lbfgs = maxiters_lbfgs, number_of_nn_inputs=number_of_nn_inputs, adam_learning_rate=adam_learning_rate)
 end
 
 
