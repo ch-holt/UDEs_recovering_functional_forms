@@ -241,7 +241,7 @@ activation_function = gelu
 final_activation_function = softplus
 
 beta_function = beta_exp
-maxiters_adam = 10000
+maxiters_adam = 2500
 maxiters_lbfgs = 2000
 number_of_nn_inputs = 1
 
