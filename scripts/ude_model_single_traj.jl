@@ -47,29 +47,7 @@ function run_model(beta_function, data, u0, seed, predict_ude, beta_network, pro
         population = population
     )
 
-    # Make sure to start with a stable parameterization
-    l_init = loss_ude(p_init, predict_ude, data, u0, beta_network, st_nn, number_of_nn_inputs, learning_bias_bool)
-    #========
-    while l_init > 1e-3
-		println("Unstable initial parameterization. Restarting..., $l_init")
-        # Initialise parameters
-        p, st = Lux.setup(rng, beta_network)
-        p = ComponentArray(p)
-        p = Float64.(p)
-
-        # Combine all parameters into a single object for optimisation
-        p_init = ComponentArray(
-            nn_params = p,
-            gamma = gamma,
-            sigma = sigma,
-            delta = delta,
-            tmax = train_length,
-            population = population
-        )
-        l_init = loss_ude(p_init, predict_ude, data, u0, beta_network, st_nn, number_of_nn_inputs, learning_bias_bool)
-	end
-    ======#
-    p_trained, losses_final = train_ude_single_dataset(p_init, predict_ude, data, u0, beta_network, st, number_of_nn_inputs, learning_bias_bool; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, adam_learning_rate=adam_learning_rate)
+    p_trained, train_losses_final, val_losses_final = train_ude_single_dataset(p_init, predict_ude, data, u0; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, adam_learning_rate=adam_learning_rate)
 
     loc_foldername = "synthesised_$(location)"
 
@@ -88,7 +66,8 @@ function run_model(beta_function, data, u0, seed, predict_ude, beta_network, pro
     end
 
     # Plot losses across iterations
-    loss_plot = plot(losses_final, yscale=:log10, xlabel="Iteration", ylabel="Total loss across trajectories (log scale)", title="Training loss across iterations", legend=false)
+    loss_plot = plot(train_losses_final, yscale=:log10, xlabel="Iteration", ylabel="Loss (log scale)", title="Training loss across iterations", label="Train", legend=:topright)
+    plot!(loss_plot, val_losses_final, yscale=:log10, label="Val")
     savefig(loss_plot, plotsdir("sims", model_name, sim_name, loc_foldername, foldername, "training_loss_plot.png"))
 
     # Evaluate final long term results 
@@ -169,7 +148,7 @@ function run_model(beta_function, data, u0, seed, predict_ude, beta_network, pro
 
     mkpath(datadir("exp_pro","sims", model_name, sim_name, loc_foldername, foldername))
 	JLD2.save(datadir("exp_pro","sims", model_name, sim_name, loc_foldername, foldername, "results.jld2"),
-		"p", p_trained, "losses", losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_traj,
+		"p", p_trained, "train_losses", train_losses_final, "val_losses", val_losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_traj,
 		"days", days, "seed", seed, "loss_traj", loss_traj, "loss_beta", loss_beta, "loss_I_grid", loss_I_grid)
 
 	println("Finished run: $(location) on thread $(Threads.threadid())")
@@ -246,11 +225,10 @@ maxiters_lbfgs = 2000
 number_of_nn_inputs = 1
 
 adam_learning_rate = 1e-3
-learning_bias_bool = true
 
 # Define strings for file names and directory for results
 model_name = "ude_single"
-sim_name ="UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_learning_rate=$(adam_learning_rate)_lbfgs=$(maxiters_lbfgs)_bias=$(learning_bias_bool)_number_of_nn_input=$(number_of_nn_inputs)_finalactivation=$(final_activation_function)_nmse_change"
+sim_name ="UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_learning_rate=$(adam_learning_rate)_lbfgs=$(maxiters_lbfgs)_bias=$(learning_bias_bool)_number_of_nn_input=$(number_of_nn_inputs)_finalactivation=$(final_activation_function)_test_val_5_5"
 if !isdir(datadir("exp_pro","sims", model_name, sim_name)) 
 	mkpath(datadir("exp_pro","sims", model_name, sim_name))
 end

@@ -2,41 +2,52 @@
 FUNCTION TO TRAIN UDE MODEL ON SINGLE DATASET
 =========================================================# 
 
-function train_ude_single_dataset(p, predict_ude, data, u0, beta_network, st_nn, number_of_nn_inputs, learning_bias_bool; maxiters_adam, maxiters_lbfgs, adam_learning_rate)
+function train_ude_single_dataset(p, predict_ude, data, u0; maxiters_adam, maxiters_lbfgs, adam_learning_rate)
 
     # Set up optimisation (first Adam then LBFGS)
     optimised_state = Optimisers.setup(Optimisers.Adam(adam_learning_rate), p)
 
+    # define training and validation time points
+    n = length(data)
+    val_tpts   = collect(5:5:n)
+    train_tpts = setdiff(1:n, val_tpts)
+
     # Create 1D vector to track losses during training
-    losses = Float64[]
+    train_losses = Float64[]
+    val_losses = Float64[]
+
     best_loss = Inf
     best_p = p
 
     for iter in 1:maxiters_adam
 
         # Compute the loss, predicted mortalities and gradient function
-        l, back_all = pullback(theta -> loss_ude(theta, predict_ude, data, u0, beta_network, st_nn, number_of_nn_inputs, learning_bias_bool) + regularisation(theta.nn_params), p)
-        println("Iteration $iter, Loss: $l")
+        train_l, back_all = pullback(theta -> loss_ude(theta, predict_ude, data, u0, train_tpts) + regularisation(theta.nn_params), p)
+        println("Iteration $iter, Loss: $train_l")
         # Evaluate the gradient of the loss w.r.t p
-        grad = back_all((one(l)))[1]
+        grad = back_all((one(train_l)))[1]
 
     	# Stop training if 5 consecutive Inf losses
-		if l == Inf && length(losses) >= 5 && all(isinf, losses[end-4:end])
+		if train_l == Inf && length(train_losses) >= 5 && all(isinf, train_losses[end-4:end])
 			println("Unstable parameter region. Aborting...")
 			break
-		end 
+		end
 
 		if isnothing(grad)
-			println("No gradient found. Loss: $l")
+			println("No gradient found. Loss: $train_l")
 			p = best_p
 			continue
 		end
 
-        push!(losses, l)
+        push!(train_losses, train_l)
 
-        # Store best iteration
-        if l < best_loss
-            best_loss = l
+        # Compute validation loss
+        val_l = loss_ude(p, predict_ude, data, u0, val_tpts) + regularisation(p.nn_params)
+        push!(val_losses, val_l)
+
+        # Store best iteration (minimising validation loss)
+        if val_l < best_loss
+            best_loss = val_l
             best_p = p
         end
         
@@ -48,7 +59,7 @@ function train_ude_single_dataset(p, predict_ude, data, u0, beta_network, st_nn,
     # Then do LBFGS optimisation
     adtype = Optimization.AutoZygote()
     optfunc   = Optimization.OptimizationFunction(
-                 (theta, _) -> loss_ude(theta, predict_ude, data, u0, beta_network, st_nn, number_of_nn_inputs, learning_bias_bool) + regularisation(theta.nn_params),
+                 (theta, _) -> loss_ude(theta, predict_ude, data, u0, train_tpts) + regularisation(theta.nn_params),
                  adtype)
     optprob = Optimization.OptimizationProblem(optfunc, best_p)
 
@@ -56,27 +67,26 @@ function train_ude_single_dataset(p, predict_ude, data, u0, beta_network, st_nn,
     res = Optimization.solve(
         optprob,
         Optim.LBFGS(m=10),
-        callback = (state, l) -> begin
+        callback = (state, train_l) -> begin
             iter_lbfgs[] += 1
-            push!(losses, l)
+            push!(train_losses, train_l)
 
-            if l < best_loss
-                best_loss = l
+            # Compute validation loss
+            val_l = loss_ude(state.u, predict_ude, data, u0, val_tpts) + regularisation(state.u.nn_params)
+            push!(val_losses, val_l)
+
+            if val_l < best_loss
+                best_loss = val_l
                 best_p = state.u
             end
 
-            iter_lbfgs[] % 50 == 0 && println("LBFGS iter $(iter_lbfgs[]): $l")
+            iter_lbfgs[] % 50 == 0 && println("LBFGS iter $(iter_lbfgs[]): $train_l")
             return false
         end,
         maxiters = maxiters_lbfgs
     )
 
-    final_loss = loss_ude(res.u, predict_ude, data, u0, beta_network, st_nn, number_of_nn_inputs, learning_bias_bool) + regularisation(res.u.nn_params)
-    if final_loss < best_loss
-        best_p = res.u
-    end
-
-    return best_p, losses
+    return best_p, train_losses, val_losses
 end
 
 #========================================================

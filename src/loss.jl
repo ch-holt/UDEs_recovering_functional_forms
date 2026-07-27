@@ -15,7 +15,7 @@ end
 LOSS FUNCTION FOR SINGLE DATASET USING NMSE
 ==============================================================# 
 
-function loss_ude(p_all, predict_ude, data, u0, beta_network, st_nn, valn, learning_bias_bool)
+function loss_ude(p_all, predict_ude, data, u0, tpts)
     pred = predict_ude(p_all, u0)
 
     if isnothing(pred)
@@ -23,26 +23,11 @@ function loss_ude(p_all, predict_ude, data, u0, beta_network, st_nn, valn, learn
         return Inf
     end
 
-    # Align lengths
-    n = min(length(pred), length(data))
-    pred_correct_length = pred[1:n]
-    data_correct_length = data[1:n]
+    # Mean squared error on the requested time points
+    nmse = loss_nmse(pred[tpts], data[tpts])
 
-    # Mean squared error
-    nmse = loss_nmse(pred_correct_length, data_correct_length)
+    return nmse
 
-    # Add learning bias to soft constrain beta(1)=0
-    if valn == 1
-        learning_bias = 1e-6 * relu((beta_network([1.0], p_all.nn_params, st_nn)[1][1]))
-    elseif valn == 4
-        learning_bias = 1e-6 * relu((beta_network([p_all.beta0, p_all.zeta, p_all.delta, 1.0], p_all.nn_params, st_nn)[1][1]))
-    end
-println(learning_bias)
-    if learning_bias_bool
-        return nmse + learning_bias
-    else
-        return nmse
-    end
 end
 
 function regularisation(nn_params)
