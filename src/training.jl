@@ -9,7 +9,7 @@ function train_ude_single_dataset(p, predict_ude, data, u0; maxiters_adam, maxit
 
     # define training and validation time points
     n = length(data)
-    val_tpts   = collect(1:160)
+    val_tpts   = collect(55:128)
     train_tpts = setdiff(1:n, val_tpts)
 
     # Create 1D vector to track losses during training

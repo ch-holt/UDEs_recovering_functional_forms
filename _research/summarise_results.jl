@@ -50,4 +50,4 @@ function summarise_results(sim_name_dir::String)
 end
 
 
-summarise_results(datadir("exp_pro", "sims", "ude_single", "UDE_single_beta=beta_exp_adam=2500_learning_rate=0.001_lbfgs=2000_bias=false_number_of_nn_input=1_finalactivation=softplus_nmse_change"))
+summarise_results(datadir("exp_pro", "sims", "ude_single", "UDE_single_beta=beta_exp_adam=2500_learning_rate=0.001_lbfgs=2000_number_of_nn_input=1_finalactivation=softplus_test=first160_val=200"))

@@ -229,15 +229,15 @@ activation_function = gelu
 final_activation_function = softplus
 
 beta_function = beta_exp
-maxiters_adam = 20
-maxiters_lbfgs = 20
+maxiters_adam = 2500
+maxiters_lbfgs = 2000
 number_of_nn_inputs = 1
 
 adam_learning_rate = 1e-3
 
 # Define strings for file names and directory for results
 model_name = "ude_single"
-sim_name ="UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_learning_rate=$(adam_learning_rate)_lbfgs=$(maxiters_lbfgs)_number_of_nn_input=$(number_of_nn_inputs)_finalactivation=$(final_activation_function)_test"
+sim_name ="UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_learning_rate=$(adam_learning_rate)_lbfgs=$(maxiters_lbfgs)_number_of_nn_input=$(number_of_nn_inputs)_finalactivation=$(final_activation_function)_val=55_128"
 if !isdir(datadir("exp_pro","sims", model_name, sim_name)) 
 	mkpath(datadir("exp_pro","sims", model_name, sim_name))
 end
