@@ -43,11 +43,12 @@ function summarise_results(sim_name_dir::String)
     df = DataFrame(rows)
     sort!(df, [:location, :seed])
 
-    out_path = joinpath(sim_name_dir, "results_summary.csv")
-    CSV.write(out_path, df)
-    println("Saved summary to: $out_path")
+
     return df
 end
 
-
-summarise_results(datadir("exp_pro", "sims", "ude_single", "UDE_single_beta=beta_exp_adam=2500_learning_rate=0.001_lbfgs=2000_number_of_nn_input=1_finalactivation=softplus_test=first160_val=200"))
+sim_name_dir = datadir("exp_pro", "sims", "ude_single", "UDE_single_beta=beta_exp_adam=2500_learning_rate=0.001_lbfgs=2000_number_of_nn_input=1_finalactivation=softplus_test=first160_val=200", "synthesised_MA")
+df = summarise_results(sim_name_dir)
+out_path = joinpath(sim_name_dir, "results_summary.csv")
+CSV.write(out_path, df)
+println("Saved summary to: $out_path")

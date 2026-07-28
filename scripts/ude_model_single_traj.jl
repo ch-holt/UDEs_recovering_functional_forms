@@ -245,19 +245,22 @@ end
 seed_grid = rand(1:100000, 100)
 
 for i = 1:length(seed_grid)
-    
-    rng = Random.seed!(seed_grid[i])
+    # Catch any errors during the run so that the following seeds still run
+    try
+        rng = Random.seed!(seed_grid[i])
+        println("Running simulation for seed $(seed_grid[i]) on thread $(Threads.threadid())")
+        beta_network, p_nn_temp, st_nn = build_neural_network(rng, hidden_dims, input_size, output_size, 
+                                    activation_function, final_activation_function)
 
-    beta_network, p_nn_temp, st_nn = build_neural_network(rng, hidden_dims, input_size, output_size, 
-                                activation_function, final_activation_function)
+        seird_nn! = make_seird_nn(beta_network, st_nn, sigma, gamma, input_size)
+        prob_ude = ODEProblem(seird_nn!, u0, tspan, p_nn_temp)
+        predict_ude = make_predict_ude(prob_ude, train_length)
 
-    seird_nn! = make_seird_nn(beta_network, st_nn, sigma, gamma, input_size)
-    prob_ude = ODEProblem(seird_nn!, u0, tspan, p_nn_temp)
-    predict_ude = make_predict_ude(prob_ude, train_length)
-
-    run_model(beta_function, data, u0, seed_grid[i], predict_ude, beta_network, prob_ude; maxiters_adam = maxiters_adam, maxiters_lbfgs = maxiters_lbfgs, number_of_nn_inputs=number_of_nn_inputs, adam_learning_rate=adam_learning_rate)
+        run_model(beta_function, data, u0, seed_grid[i], predict_ude, beta_network, prob_ude; maxiters_adam = maxiters_adam, maxiters_lbfgs = maxiters_lbfgs, number_of_nn_inputs=number_of_nn_inputs, adam_learning_rate=adam_learning_rate)
+    catch e
+        println("Error occurred for seed $(seed_grid[i]): $e")
+    end
 end
-
 
 
 

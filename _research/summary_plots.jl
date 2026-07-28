@@ -21,9 +21,11 @@ using UDE_FUNCTIONAL_FORMS
 CONFIGURATION — edit these to match the sim you want
 =========================================================#
 
-location    = "MA"
-model_name  = "ude_single"
-sim_name    = "UDE_single_beta=beta_exp_adam=2500_learning_rate=0.001_lbfgs=2000_number_of_nn_input=1_finalactivation=softplus_test=first160_val=200"
+location = "MA"
+model_name = "ude_single"
+sim_name = "UDE_single_beta=beta_exp_adam=2500_learning_rate=0.001_lbfgs=2000_number_of_nn_input=1_finalactivation=softplus_test=first160_val=200"
+multistart = true
+MS_limit = 0.3
 
 # Must match the architecture used in training
 hidden_dims          = 5
@@ -44,9 +46,15 @@ population = POPULATION[location]
 FIND ALL SEED SIMULATION FOLDERS
 =========================================================#
 
-loc_foldername = "synthesised_$(location)"
-sim_dir        = datadir("exp_pro", "sims", model_name, sim_name, loc_foldername)
-seed_folders   = filter(f -> occursin(r"simulation_v1+_seed=", f), readdir(sim_dir))
+# If multistart then only overlay seeds_to_keep
+sim_dir = datadir("exp_pro", "sims", model_name, sim_name, "synthesised_$(location)")
+if !multistart
+    loc_foldername = "synthesised_$(location)"
+    seed_folders   = filter(f -> occursin(r"simulation_v1+_seed=", f), readdir(sim_dir))
+else
+    seeds_to_keep = JLD2.load(joinpath(sim_dir, "seeds_to_keep_MS=$(MS_limit).jld2"))["seeds_to_keep"]
+    seed_folders = ["simulation_v1_seed=$(s)" for s in seeds_to_keep]
+end
 
 println("Found $(length(seed_folders)) seed simulations in $(sim_name)")
 
@@ -169,11 +177,20 @@ SAVE
 save_dir = plotsdir("sims", model_name, sim_name, "synthesised_$(location)")
 mkpath(save_dir)
 
-savefig(traj_plot,      joinpath(save_dir, "traj_overlay.png"))
-savefig(beta_time_plot, joinpath(save_dir, "beta_time_overlay.png"))
-savefig(beta_01_plot,   joinpath(save_dir, "beta_01_overlay.png"))
+
 
 panel = plot(traj_plot, beta_time_plot, beta_01_plot; layout=(1, 3), size=(1800, 500))
-savefig(panel, joinpath(save_dir, "panel_overlay.png"))
+if multistart
+    savefig(panel, joinpath(save_dir, "panel_overlay_MS=$(MS_limit).png"))
+    savefig(traj_plot,      joinpath(save_dir, "traj_overlay_MS=$(MS_limit).png"))
+    savefig(beta_time_plot, joinpath(save_dir, "beta_time_overlay_MS=$(MS_limit).png"))
+    savefig(beta_01_plot,   joinpath(save_dir, "beta_01_overlay_MS=$(MS_limit).png"))
+else
+    savefig(panel, joinpath(save_dir, "panel_overlay.png"))
+    savefig(traj_plot,      joinpath(save_dir, "traj_overlay.png"))
+    savefig(beta_time_plot, joinpath(save_dir, "beta_time_overlay.png"))
+    savefig(beta_01_plot,   joinpath(save_dir, "beta_01_overlay.png"))
+end
 
+savefig(panel, joinpath(save_dir, "panel_overlay_MS=$(MS_limit).png"))
 println("Done — plots saved to:\n  $(save_dir)")
