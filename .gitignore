@@ -10,3 +10,4 @@ scripts/classify_sr_equations.jl
 scripts/run_SR_tests.jl
 data_old/
 figures/
+.claude/

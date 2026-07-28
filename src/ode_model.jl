@@ -122,3 +122,29 @@ function make_predict_ude(prob, train_length)
     end
     return predict_ude
 end
+
+#========================================================
+DEFINE UDE MODEL
+=========================================================# 
+function make_seird_sr(mach, r, sigma, gamma, input_size::Int)
+    valn = Val(input_size)
+    function seird_sr!(du, u, p, t)
+        S, E, I, R, D = u
+        N = S + E + I + R
+
+        if N <= 0
+            du .= 0.0
+            return
+        end
+
+        nn_input = reshape(nn_inputs(p, I, valn), 1, :)
+        beta = predict(mach, (data=nn_input, idx=r.best_idx))[1]
+
+        du[1] = -beta * S * I / N
+        du[2] = beta * S * I / N - sigma * E
+        du[3] = sigma * E - (gamma + p.delta) * I
+        du[4] = gamma * I
+        du[5] = p.delta * I
+    end
+    return seird_sr!
+end

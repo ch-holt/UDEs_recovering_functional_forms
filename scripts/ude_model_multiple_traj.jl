@@ -13,7 +13,7 @@ using Lux
 using JLD2
 using ComponentArrays
 using DataFrames
-using DiffEqFlux, Zygote
+using Zygote
 using Optimisers
 using Optimization
 using Optim
@@ -173,9 +173,6 @@ function run_model(locations, beta_function, beta_network; maxiters_adam, maxite
 
         # Save the plot
         savefig(beta_plot, joinpath(plot_dir, "beta_plot.png"))
-
-        # Save the plot
-        savefig(traj_plot, joinpath(plot_dir, "traj_plot.png"))
 
         # Create beta plot against x_hat
         

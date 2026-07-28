@@ -11,7 +11,7 @@ using DrWatson
 using Lux
 using ComponentArrays
 using DataFrames
-using DiffEqFlux, Zygote
+using Zygote
 using Optimisers
 using DifferentialEquations
 using Plots
@@ -127,9 +127,6 @@ function run_model(beta_function, data, u0, seed, predict_ude, beta_network, pro
 
     # Save the plot
     savefig(beta_plot, joinpath(plot_dir, "beta_plot.png"))
-
-    # Save the plot
-    savefig(traj_plot, joinpath(plot_dir, "traj_plot.png"))
 
     # Create beta plot against x_hat
     

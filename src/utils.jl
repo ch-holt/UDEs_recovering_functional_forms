@@ -2,9 +2,9 @@
 EXTRACT THE UDE WITH THE LOWEST NMSE
 ==============================================================# 
 
-function extract_best_ude(sim_name, obs, population)
+function extract_best_ude(sim_name, location, obs, population)
     # Define the root file path
-    root = DrWatson.datadir("sims", "ude_single", sim_name)
+    root = DrWatson.datadir("exp_pro","sims",  "ude_single",sim_name, "synthesised_$(location)")
 
     # Collect results from all simulations
     results_list = []
@@ -12,11 +12,11 @@ function extract_best_ude(sim_name, obs, population)
         # Only include directories
         if isdir(joinpath(root, filename))
             # Extract results, predictions and losses
-            SR_results = JLD2.load(DrWatson.datadir("sims", "ude_single", sim_name, filename, "results.jld2"))
+            SR_results = JLD2.load(joinpath(root, filename, "results.jld2"))
             pred = SR_results["prediction"]
             # Extract the predicted infectious trajectory for the training data
             i_traj = pred[3, 1:length(obs)]
-            nmse = loss_nmse(i_traj, obs, population)
+            nmse = loss_nmse(i_traj, obs)
             push!(results_list, (nmse=nmse, fname=filename, i_traj=i_traj))
         end
     end
@@ -29,7 +29,7 @@ function extract_best_ude(sim_name, obs, population)
     I_nn = reshape(results_list[best_idx].i_traj, 1, :)
 
     # Extract the NN parameters from the best simulation
-    best_results = JLD2.load(DrWatson.datadir("sims", "ude_single", sim_name, best_fname, "results.jld2"))
+    best_results = JLD2.load(joinpath(root, best_fname, "results.jld2"))
 
     return I_nn, best_results
 end
