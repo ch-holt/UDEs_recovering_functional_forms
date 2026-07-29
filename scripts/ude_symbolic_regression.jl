@@ -245,8 +245,8 @@ plot!(i_traj_plot, legend=:best, legendfontsize=10)
 plot!(i_traj_plot, grid=true, gridalpha=0.3)
 
 x_ann = maximum(days) * 0.75
-y_ann = maximum(sol_sr) * 0.85
-dy = maximum(sol_sr) * 0.06
+y_ann = maximum(vcat(obs, i_sr, I_nn)) * 0.85
+dy = maximum(vcat(obs, i_sr, I_nn)) * 0.06
 annotate!(i_traj_plot, x_ann, y_ann - dy, text("NMSE (SEIRD + SR vs true) = $(round(nmse_SR_true_traj, sigdigits=3))", 9))
 annotate!(i_traj_plot, x_ann, y_ann - 2*dy, text("NMSE (UDE vs true) = $(round(nmse_NN_true_traj, sigdigits=3))", 9))
 savefig(i_traj_plot, joinpath(output_dir, "$(sim_name)_traj_plot.png"))
