@@ -116,7 +116,7 @@ function train_ude_multiple_datasets(nn_params, predict_ude, trajectories, beta_
         total_loss, total_grad = combined_loss_ude_adam(beta_network, st_nn, nn_params, number_of_nn_inputs, predict_ude, trajectories)
 
     	# Stop training if 5 consecutive Inf losses
-		if total_loss == Inf && length(total_losses) >= 4 && all(isinf, total_losses[end-4:end])
+		if total_loss == Inf && length(total_losses) >= 5 && all(isinf, total_losses[end-4:end])
 			println("Unstable parameter region. Aborting...")
 			break
 		end 

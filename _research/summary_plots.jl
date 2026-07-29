@@ -192,5 +192,4 @@ else
     savefig(beta_01_plot,   joinpath(save_dir, "beta_01_overlay.png"))
 end
 
-savefig(panel, joinpath(save_dir, "panel_overlay_MS=$(MS_limit).png"))
 println("Done — plots saved to:\n  $(save_dir)")

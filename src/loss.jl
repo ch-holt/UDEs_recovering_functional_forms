@@ -162,6 +162,9 @@ function combined_loss_ude_lbfgs(beta_network, st_nn, nn_params, number_of_nn_in
            error("ODE solve failed for trajectory $i. Loss: $l")
         end
         grad = back_all((one(l)))[1]
+        if isnothing(grad) || isnothing(grad.nn_params)
+            error("No gradient available for trajectory $i")
+        end
         println("Loss for trajectory $i: $l")
 
         total_loss += l

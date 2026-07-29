@@ -32,7 +32,8 @@ function generate_ground_truth_beta(beta_functions)
         println("Generating synthetic trajectories for $(beta_function)")
         for location in keys(POPULATION)
             println("Generating synthetic trajectories for $(location)")
-            dataset = JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_beta_exp", "synthesised_$(location).jld2"))
+            beta_name = string(beta_function)
+            dataset = JLD2.load(datadir("exp_pro", "synthetic_data", "synthetic_trajectories_$(beta_name)", "synthesised_$(location).jld2"))
 
             # Extract infectious individuals and days from the dataset
             obs = dataset["infectious"]
