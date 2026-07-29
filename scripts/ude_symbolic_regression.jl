@@ -89,7 +89,7 @@ population = POPULATION[location]
 
 
 # Load the observed data
-data = JLD2.load(DrWatson.datadir("exp_pro","synthetic_data","synthetic_trajectories_beta_exp", "synthesised_MA.jld2"))
+data = JLD2.load(DrWatson.datadir("exp_pro","synthetic_data","synthetic_trajectories_beta_exp", "synthesised_$(location).jld2"))
 
 # Just use infectious trajectory
 obs = data["infectious"]
@@ -172,6 +172,11 @@ title!(x_hat_vs_beta, "Symbolic Regression on $(plot_title) vs true β\nEq: $(si
 plot!(x_hat_vs_beta, legend=:best, legendfontsize=10)
 plot!(x_hat_vs_beta, grid=true, gridalpha=0.3)
 
+I_N_obs_min = minimum(SR_input_days)
+I_N_obs_max = maximum(SR_input_days)
+vline!(x_hat_vs_beta, [I_N_obs_min], linestyle=:dash, color=:gray40, linewidth=1.5, label="Min observed I/N")
+vline!(x_hat_vs_beta, [I_N_obs_max], linestyle=:dash, color=:gray70, linewidth=1.5, label="Max observed I/N")
+
 x_ann = maximum(I_grid) * 0.75
 y_ann = maximum(SR_beta_1000) * 0.85
 dy = maximum(SR_beta_1000) * 0.06
@@ -221,8 +226,30 @@ u0 = [S0, E0, I0, R0_recovered, D0]
 p_sr = ComponentArray(population=population, delta=delta)
 seird_sr! = make_seird_sr(mach, r, sigma, gamma, input_size)
 prob_sr = ODEProblem(seird_sr!, u0, tspan, p_sr)
-sol_sr = solve(prob_sr, Rosenbrock23(), saveat=1.0)
+sol_sr = solve(prob_sr, Tsit5(), saveat=1.0)
+i_sr = sol_sr[3, 1:length(obs)]
 
+# Plot infection trajectory
+i_traj_plot = plot(days, obs, lw=2.5, label="True observations", color=:black)
+
+# Evaluate nmse
+nmse_SR_true_traj = loss_nmse(i_sr, obs)
+nmse_NN_true_traj = loss_nmse(I_nn, obs)
+
+plot!(i_traj_plot, days, i_sr, lw=2.5, ls=:dash, label="SEIRD_SR model", color=:red, alpha=0.8)
+plot!(i_traj_plot, days, I_nn, lw=2.5, ls=:dot, label="UDE model", color=:lightblue, alpha=0.8)
+xlabel!(i_traj_plot, "Time")
+ylabel!(i_traj_plot, "Infectious Individuals")
+title!(i_traj_plot, "Infection Trajectory")
+plot!(i_traj_plot, legend=:best, legendfontsize=10)
+plot!(i_traj_plot, grid=true, gridalpha=0.3)
+
+x_ann = maximum(days) * 0.75
+y_ann = maximum(sol_sr) * 0.85
+dy = maximum(sol_sr) * 0.06
+annotate!(i_traj_plot, x_ann, y_ann - dy, text("NMSE (SEIRD + SR vs true) = $(round(nmse_SR_true_traj, sigdigits=3))", 9))
+annotate!(i_traj_plot, x_ann, y_ann - 2*dy, text("NMSE (UDE vs true) = $(round(nmse_NN_true_traj, sigdigits=3))", 9))
+savefig(i_traj_plot, joinpath(output_dir, "$(sim_name)_traj_plot.png"))
 
 
 #=============================================================
