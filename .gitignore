@@ -1,4 +1,5 @@
 data/
+plots/
 .DS_Store
 scripts/plot_together.jl
 scripts/figures/
@@ -7,3 +8,6 @@ scripts/testing.jl
 scripts/outputs/
 scripts/classify_sr_equations.jl
 scripts/run_SR_tests.jl
+data_old/
+figures/
+.claude/

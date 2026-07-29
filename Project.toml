@@ -1,4 +1,5 @@
 name = "UDE_FUNCTIONAL_FORMS"
+uuid = "dfaa48e5-3a7a-41c5-ab06-e1fbaeda2447"
 authors = ["Charlotte Holt"]
 
 [deps]
@@ -13,6 +14,7 @@ DifferentialEquations = "0c46a032-eb83-5123-abaf-570d42b7fbaa"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 DrWatson = "634d3b9d-ee7a-5ddf-bec9-22491ea816e1"
 DynamicExpressions = "a40a106e-89c9-4ca8-8020-a735e8728b6b"
+ForecastBaselines = "d939df8b-32bd-4754-9006-1ae460420eb6"
 ImageIO = "82e4d734-157c-48bb-816b-45c225c6df19"
 JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
 Lux = "b2108857-7c20-44ae-9111-449ecde12c47"
@@ -31,3 +33,6 @@ SymbolicRegression = "8254be44-1295-4e6a-a16d-46603ac705cb"
 SymbolicUtils = "d1185830-fcd6-423d-90d6-eec64667417b"
 Symbolics = "0c5d862f-8b57-4792-8d23-62f2024744c7"
 Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
+
+[compat]
+ForecastBaselines = "0.1.0"

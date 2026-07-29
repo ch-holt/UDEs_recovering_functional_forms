@@ -142,9 +142,9 @@ for filename in readdir(root)
     end
 end
 
-# Find the simulation with the lowest MSE
-best_idx = argmin(r.mse for r in results_list)
-best_mse = results_list[best_idx].mse
+# Find the simulation with the lowest NMSE
+best_idx = argmin(r.nmse for r in results_list)
+best_nmse = results_list[best_idx].nmse
 best_fname = results_list[best_idx].fname
 
 # Extract the data but convert to a 1 x N matrix
