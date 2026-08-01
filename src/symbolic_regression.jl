@@ -48,16 +48,16 @@ RUN SYMBOLICREGRESSION.JL
 function run_symbolic_regression(SR_input, SR_output, output_dir; seed=seed)
     
     model = SRRegressor(
-        niterations=1,
+        niterations=100,
         binary_operators=[+, -, *, /],
         unary_operators=[exp],
         maxsize = 20,
         output_directory = output_dir,
         # Make results reproducible by disabling multithreading
-        #populations = 15,
+        populations = 15,
         population_size = 50,
-        parsimony = 0.1,
-        complexity_of_constants = 5,
+        parsimony = 2,
+        complexity_of_constants = 1,
         parallelism=:serial,
         seed = seed,
         deterministic = true,

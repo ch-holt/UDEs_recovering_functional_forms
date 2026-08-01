@@ -55,7 +55,7 @@ end
 # Define simulation
 location = "MA"
 model_name = "ude_single"
-sim = "UDE_single_beta=beta_exp_adam=2500_learning_rate=0.001_lbfgs=2000_number_of_nn_input=1_finalactivation=softplus_test=first160_val=200"
+sim = "UDE_single_beta=beta_exp_adam=2500_learning_rate=0.001_lbfgs=2000_number_of_nn_input=1_finalactivation=softplus_val=55_128"
 sim_name_dir = datadir("exp_pro", "sims", "ude_single", sim, "synthesised_$(location)")
 MS_limit=0.3
 

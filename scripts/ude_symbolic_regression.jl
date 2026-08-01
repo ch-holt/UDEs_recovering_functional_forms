@@ -121,9 +121,9 @@ SR_beta_days = reshape(predict(mach, (data=SR_input_days, idx=r.best_idx)),:,1)
 # Evaluate NN output for number of days
 NN_beta_days = reshape(nn_output_days, :, 1)
 
-nmse_SR_true_days = loss_nmse(SR_beta_days, true_beta_days)
-nmse_SR_NN_days = loss_nmse(SR_beta_days, NN_beta_days)
-nmse_NN_true_days = loss_nmse(NN_beta_days, true_beta_days)
+nmse_SR_true_days = loss_nmse(vec(SR_beta_days), vec(true_beta_days))
+nmse_SR_NN_days   = loss_nmse(vec(SR_beta_days), vec(NN_beta_days))
+nmse_NN_true_days = loss_nmse(vec(NN_beta_days), vec(true_beta_days))
 
 p_comparison = plot(days, true_beta_days[1:length(days)], lw=2.5, label="True β", color=:black)
 
@@ -157,9 +157,9 @@ SR_beta_1000 = reshape(predict(mach, (data=SR_input_1000, idx=r.best_idx)),:,1)
 NN_beta_1000 = reshape(nn_output_1000, :, 1)
 
 # Evaluate nmse
-nmse_SR_true_1000 = loss_nmse(SR_beta_1000, true_beta_1000)
-nmse_SR_NN_1000 = loss_nmse(SR_beta_1000, NN_beta_1000)
-nmse_NN_true_1000 = loss_nmse(NN_beta_1000, true_beta_1000)
+nmse_SR_true_1000 = loss_nmse(vec(SR_beta_1000), vec(true_beta_1000))
+nmse_SR_NN_1000   = loss_nmse(vec(SR_beta_1000), vec(NN_beta_1000))
+nmse_NN_true_1000 = loss_nmse(vec(NN_beta_1000), vec(true_beta_1000))
 
 x_hat_vs_beta = plot(I_grid, true_beta_1000, lw=2.5, label="True β", color=:black)
 
@@ -169,7 +169,7 @@ plot!(x_hat_vs_beta, I_grid, NN_beta_1000, lw=2.5, ls=:dot, label="NN approximat
 xlabel!(x_hat_vs_beta, "x̂ = I / N")
 ylabel!(x_hat_vs_beta, "β")
 title!(x_hat_vs_beta, "Symbolic Regression on $(plot_title) vs true β\nEq: $(simplified_equation)", titlefontsize=8)
-plot!(x_hat_vs_beta, legend=:best, legendfontsize=10)
+plot!(x_hat_vs_beta, legend=:topleft, legendfontsize=8)
 plot!(x_hat_vs_beta, grid=true, gridalpha=0.3)
 
 I_N_obs_min = minimum(SR_input_days)
@@ -177,12 +177,13 @@ I_N_obs_max = maximum(SR_input_days)
 vline!(x_hat_vs_beta, [I_N_obs_min], linestyle=:dash, color=:gray40, linewidth=1.5, label="Min observed I/N")
 vline!(x_hat_vs_beta, [I_N_obs_max], linestyle=:dash, color=:gray70, linewidth=1.5, label="Max observed I/N")
 
-x_ann = maximum(I_grid) * 0.75
-y_ann = maximum(SR_beta_1000) * 0.85
-dy = maximum(SR_beta_1000) * 0.06
-annotate!(x_hat_vs_beta, x_ann, y_ann, text("NMSE (NN vs SR) = $(round(nmse_SR_NN_1000, sigdigits=3))", 9))
-annotate!(x_hat_vs_beta, x_ann, y_ann - dy, text("NMSE (SR vs true) = $(round(nmse_SR_true_1000, sigdigits=3))", 9))
-annotate!(x_hat_vs_beta, x_ann, y_ann - 2*dy, text("NMSE (NN vs true) = $(round(nmse_NN_true_1000, sigdigits=3))", 9))
+y_range = maximum(SR_beta_1000) - minimum(SR_beta_1000)
+x_ann = maximum(I_grid) * 0.60
+y_ann = minimum(SR_beta_1000) + y_range * 0.35
+dy = y_range * 0.12
+annotate!(x_hat_vs_beta, x_ann, y_ann,        text("NMSE (NN vs SR) = $(round(nmse_SR_NN_1000, sigdigits=3))", :left, 9))
+annotate!(x_hat_vs_beta, x_ann, y_ann - dy,   text("NMSE (SR vs true) = $(round(nmse_SR_true_1000, sigdigits=3))", :left, 9))
+annotate!(x_hat_vs_beta, x_ann, y_ann - 2*dy, text("NMSE (NN vs true) = $(round(nmse_NN_true_1000, sigdigits=3))", :left, 9))
 savefig(x_hat_vs_beta, joinpath(output_dir, "$(sim_name)_SR_beta_against_x_hat.png"))
 
 #=============================================================
@@ -234,21 +235,21 @@ i_traj_plot = plot(days, obs, lw=2.5, label="True observations", color=:black)
 
 # Evaluate nmse
 nmse_SR_true_traj = loss_nmse(i_sr, obs)
-nmse_NN_true_traj = loss_nmse(I_nn, obs)
-
+nmse_NN_true_traj = loss_nmse(vec(I_nn), obs)
 plot!(i_traj_plot, days, i_sr, lw=2.5, ls=:dash, label="SEIRD_SR model", color=:red, alpha=0.8)
-plot!(i_traj_plot, days, I_nn, lw=2.5, ls=:dot, label="UDE model", color=:lightblue, alpha=0.8)
+plot!(i_traj_plot, days, vec(I_nn), lw=2.5, ls=:dot, label="UDE model", color=:lightblue, alpha=0.8)
 xlabel!(i_traj_plot, "Time")
 ylabel!(i_traj_plot, "Infectious Individuals")
 title!(i_traj_plot, "Infection Trajectory")
 plot!(i_traj_plot, legend=:best, legendfontsize=10)
 plot!(i_traj_plot, grid=true, gridalpha=0.3)
 
-x_ann = maximum(days) * 0.75
-y_ann = maximum(vcat(obs, i_sr, I_nn)) * 0.85
-dy = maximum(vcat(obs, i_sr, I_nn)) * 0.06
-annotate!(i_traj_plot, x_ann, y_ann - dy, text("NMSE (SEIRD + SR vs true) = $(round(nmse_SR_true_traj, sigdigits=3))", 9))
-annotate!(i_traj_plot, x_ann, y_ann - 2*dy, text("NMSE (UDE vs true) = $(round(nmse_NN_true_traj, sigdigits=3))", 9))
+y_max = maximum(vcat(obs, i_sr, vec(I_nn)))
+x_ann = maximum(days) * 0.95
+y_ann = y_max * 0.25
+dy    = y_max * 0.10
+annotate!(i_traj_plot, x_ann, y_ann,      text("NMSE (SEIRD+SR vs true) = $(round(nmse_SR_true_traj, sigdigits=3))", :right, 9))
+annotate!(i_traj_plot, x_ann, y_ann - dy, text("NMSE (UDE vs true) = $(round(nmse_NN_true_traj, sigdigits=3))", :right, 9))
 savefig(i_traj_plot, joinpath(output_dir, "$(sim_name)_traj_plot.png"))
 
 
