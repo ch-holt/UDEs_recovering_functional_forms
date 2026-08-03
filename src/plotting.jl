@@ -11,7 +11,7 @@ function plot_ensemble_summary(days, true_inf, I_grid, true_beta_over_time, true
         color=:black, linewidth=2, label="Data",
         xlabel="Day", ylabel="Infectious individuals",
         title="Infectious trajectory — ($(location))",
-        legend=:topright)
+        legend=:topright, left_margin=10Plots.mm)
 
     beta_time_plot = plot(days[1:length(true_beta_over_time)], true_beta_over_time;
         color=:black, linewidth=2, label="True β",
@@ -68,9 +68,17 @@ function plot_ensemble_summary(days, true_inf, I_grid, true_beta_over_time, true
     beta_01_crps  = score(beta_01_fc, CRPS_trajectory())
 
     # Add CRPS to plot titles
-    plot!(traj_plot,title="Infectious trajectory — ($(location))\nCRPS: $(round(inf_crps, sigdigits=3))")
-    plot!(beta_time_plot,title="Beta over time — ($(location))\nCRPS: $(round(beta_crps, sigdigits=3))")
-    plot!(beta_01_plot,title="Beta vs I/N — ($(location))\nCRPS: $(round(beta_01_crps, sigdigits=3))")
+    title!(traj_plot, "Infectious trajectory — ($(location))\nCRPS: $(round(inf_crps, sigdigits=3))")
+    xlabel!(traj_plot, "Day")
+    ylabel!(traj_plot, "Infectious individuals")
+
+    title!(beta_time_plot, "Beta over time — ($(location))\nCRPS: $(round(beta_crps, sigdigits=3))")
+    xlabel!(beta_time_plot, "Day")
+    ylabel!(beta_time_plot, "β(t)")
+
+    title!(beta_01_plot, "Beta vs I/N — ($(location))\nCRPS: $(round(beta_01_crps, sigdigits=3))")
+    xlabel!(beta_01_plot, "I/N")
+    ylabel!(beta_01_plot, "β(I/N)")
 
     return traj_plot, beta_time_plot, beta_01_plot
 end

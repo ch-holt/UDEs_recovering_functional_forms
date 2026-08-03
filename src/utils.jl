@@ -1,5 +1,5 @@
 #=============================================================
-EXTRACT THE UDE WITH THE LOWEST NMSE
+EXTRACT THE UDE
 ==============================================================# 
 
 function extract_ude(root, obs, filename)
@@ -40,7 +40,9 @@ function extract_best_ude(root, obs, multistart, MS_limit)
     # Extract the NN parameters from the best simulation
     best_results = results_list[best_idx].results
 
-    return I_nn, best_results
+    folder = results_list[best_idx].fname
+
+    return I_nn, best_results, folder
 end
 
 function get_seed_folders(root, multistart, MS_limit)
@@ -55,6 +57,34 @@ function get_seed_folders(root, multistart, MS_limit)
     println("Found $(length(seed_folders)) seed simulations in $(root)")
     return seed_folders
 end
+
+#=============================================================
+FIND WHEN TRAJECTORY GOES FLAT FOR TRAIN/VAL
+==============================================================# 
+
+function find_flat_start(data; window::Int=14, rel_threshold::Float64=0.01)
+
+    n = length(data)
+    peak = maximum(data)
+
+    # Rolling std over windows of length `window`, normalised by the peak
+    rel_std = fill(NaN, n)
+    for i in 1:(n - window + 1)
+        rel_std[i] = std(view(data, i:(i + window - 1))) / peak
+    end
+
+    # Last window start whose relative std is still above threshold
+    last_active = findlast(x -> !isnan(x) && x >= rel_threshold, rel_std)
+
+    # Series never settles into a flat tail
+    isnothing(last_active) && return n
+
+    # Flatness begins right after that window ends
+    flat_start = last_active + window - 1
+    return min(flat_start, n)
+end
+
+
 #=============================================================
 ADD GAUSSIAN NOISE
 ==============================================================# 

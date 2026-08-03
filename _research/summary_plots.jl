@@ -28,8 +28,8 @@ CONFIGURATION
 location = "MA"
 model_name = "ude_single"
 sim_name = "UDE_single_beta=beta_exp_adam=2500_learning_rate=0.001_lbfgs=2000_number_of_nn_input=1_finalactivation=softplus_test=first160_val=200"
-multistart = false
-MS_limit = 0
+multistart = true
+MS_limit = 0.3
 
 # Must match the architecture used in training
 hidden_dims          = 5
@@ -179,3 +179,6 @@ else
 end
 
 println("Done — plots saved to:\n  $(output_dir)")
+
+I_nn, best_results, folder = extract_best_ude(sim_dir, true_inf, multistart, MS_limit)
+println("Best UDE results found in folder: $(folder)")

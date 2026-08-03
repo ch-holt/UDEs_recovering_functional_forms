@@ -304,6 +304,10 @@ for folder in seed_folders
 
     savefig(p_diff_xhat, joinpath(output_dir, "$(sim_name)_SR_NN_minus_true_beta_xhat.png"))
 
+    # Save panel with the three main plots
+    panel = plot(i_traj_plot, p_comparison, x_hat_vs_beta; layout=(1, 3), size=(1800, 500))
+    savefig(panel, joinpath(output_dir, "$(sim_name)_panel.png"))
+
     # Save both report and machine to the same file and all trajectories
     JLD2.save(joinpath(output_dir, "SR_report.jld2"), "report", r, "mach", mach, 
         "SR_beta_days", SR_beta_days, "SR_beta_0_1", SR_beta_0_1, "SR_inf", i_sr)

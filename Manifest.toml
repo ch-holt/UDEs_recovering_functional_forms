@@ -2,7 +2,7 @@
 
 julia_version = "1.12.5"
 manifest_format = "2.0"
-project_hash = "808a53f1897ff441a489cd279834a1f673e82eb7"
+project_hash = "6a2357d09aea7b1b26d7f2c4575893943feba41f"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "0a81a018463de6c3f4f2c9360121c562e5add9e4"
@@ -3999,7 +3999,7 @@ uuid = "781d530d-4396-4725-bb49-402e4bee1e77"
 version = "1.4.0"
 
 [[deps.UDE_FUNCTIONAL_FORMS]]
-deps = ["CSV", "ComponentArrays", "DSP", "DataDrivenDiffEq", "DataDrivenSparse", "DataFrames", "DiffEqFlux", "DifferentialEquations", "Distributions", "DrWatson", "DynamicExpressions", "ImageIO", "JLD2", "Lux", "MLJ", "ModelingToolkit", "Optim", "Optimisers", "Optimization", "OptimizationOptimJL", "OrdinaryDiffEq", "Plots", "Revise", "Statistics", "StatsBase", "SymbolicRegression", "SymbolicUtils", "Symbolics", "Zygote"]
+deps = ["CSV", "ComponentArrays", "DSP", "DataDrivenDiffEq", "DataDrivenSparse", "DataFrames", "DiffEqFlux", "DifferentialEquations", "Distributions", "DrWatson", "DynamicExpressions", "ForecastBaselines", "ImageIO", "JLD2", "Lux", "MLJ", "ModelingToolkit", "Optim", "Optimisers", "Optimization", "OptimizationOptimJL", "OrdinaryDiffEq", "Plots", "Revise", "Statistics", "StatsBase", "SymbolicRegression", "SymbolicUtils", "Symbolics", "Zygote"]
 path = "."
 uuid = "dfaa48e5-3a7a-41c5-ab06-e1fbaeda2447"
 version = "0.0.0"
