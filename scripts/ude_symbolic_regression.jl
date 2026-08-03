@@ -66,9 +66,10 @@ function symbolic_regression(sim_name,location, output_dir, obs, input_size)
     # Evaluate neural network and extract approximation
     nn_output_days = vec(beta_network(norm_i_traj, p_trained.nn_params, st_nn)[1])
 
-    max_beta = maximum(nn_output_days)
+    max_i_norm = maximum(norm_i_traj)
+    min_i_norm = minimum(norm_i_traj)
 
-    SR_input_1000, SR_input_0_1, SR_input_days, nn_input_1000, nn_input_0_1, nn_input_days, I_grid, range_0_1 = build_sr_inputs(p_trained, norm_i_traj, max_beta, input_size)
+    SR_input_1000, SR_input_0_1, SR_input_days, nn_input_1000, nn_input_0_1, nn_input_days, I_grid, range_0_1 = build_sr_inputs(p_trained, norm_i_traj, min_i_norm, max_i_norm, input_size)
     
     nn_output_1000 = vec(beta_network(nn_input_1000, p_trained.nn_params, st_nn)[1])
     nn_output_0_1 = vec(beta_network(nn_input_0_1, p_trained.nn_params, st_nn)[1])

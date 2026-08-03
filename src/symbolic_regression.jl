@@ -2,10 +2,10 @@
 GENERATE SYMBOLIC REGRESSION INPUTS/OUTPUTS
 =========================================================# 
 
-function build_sr_inputs(p_all, norm_i_traj, max_beta, number_of_nn_inputs::Int)
+function build_sr_inputs(p_all, norm_i_traj, min_i_norm, max_i_norm, number_of_nn_inputs::Int)
 
     # We do SR on this grid
-    I_grid = collect(range(0, max_beta; length=1000))
+    I_grid = collect(range(min_i_norm, max_i_norm; length=1000))
     range_0_1 = collect(range(0, 1; length=1000))
 
     valn = Val(number_of_nn_inputs)
