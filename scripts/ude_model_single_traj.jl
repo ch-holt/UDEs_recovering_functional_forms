@@ -18,6 +18,7 @@ using Plots
 using JLD2
 using Optimization
 using OptimizationOptimJL
+using SciMLSensitivity
 using Random
 
 # Call module
@@ -28,7 +29,7 @@ using UDE_FUNCTIONAL_FORMS
 MAIN FUNCTION TO TRAIN THE UDE AND SAVE THE RESULTS
 =========================================================# 
 
-function run_model(beta_function, data, u0, seed, predict_ude, beta_network, prob_ude; maxiters_adam, maxiters_lbfgs, number_of_nn_inputs, adam_learning_rate)
+function run_model(beta_function, data, train_length, u0, seed, predict_ude, beta_network, prob_ude; maxiters_adam, maxiters_lbfgs, number_of_nn_inputs, adam_learning_rate)
     println("Starting run: on thread $(Threads.threadid())")
     rng = Random.seed!(seed)
 
@@ -47,7 +48,9 @@ function run_model(beta_function, data, u0, seed, predict_ude, beta_network, pro
         population = population
     )
 
-    p_trained, train_losses_final, val_losses_final = train_ude_single_dataset(p_init, predict_ude, data, u0; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, adam_learning_rate=adam_learning_rate)
+    training_data = data[1:train_length]
+
+    p_trained, train_losses_final, val_losses_final = train_ude_single_dataset(p_init, predict_ude, training_data, u0; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, adam_learning_rate=adam_learning_rate)
 
     loc_foldername = "synthesised_$(location)"
 
@@ -166,8 +169,8 @@ end
 DEFINE HYPERPARAMETERS
 =========================================================#
 
-# Number of data points used for training (total number of entries in the dataset)
-const train_length = 365
+# Number of data points used for training
+const train_length = 50
 # Define the timespan for the ODE solver
 tspan = [1, train_length]
 
@@ -234,14 +237,15 @@ adam_learning_rate = 1e-3
 
 # Define strings for file names and directory for results
 model_name = "ude_single"
-sim_name ="UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_learning_rate=$(adam_learning_rate)_lbfgs=$(maxiters_lbfgs)_number_of_nn_input=$(number_of_nn_inputs)_finalactivation=$(final_activation_function)_val=55_128"
+sim_name ="UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_learning_rate=$(adam_learning_rate)_lbfgs=$(maxiters_lbfgs)_number_of_nn_input=$(number_of_nn_inputs)_finalactivation=$(final_activation_function)_traindata=$(train_length)"
 if !isdir(datadir("exp_pro","sims", model_name, sim_name)) 
 	mkpath(datadir("exp_pro","sims", model_name, sim_name))
 end
 
 seed_grid = rand(1:100000, 100)
 
-for i = 1:length(seed_grid)
+#for i = 1:length(seed_grid)
+for i = 1
     # Catch any errors during the run so that the following seeds still run
     try
         rng = Random.seed!(seed_grid[i])
@@ -253,7 +257,7 @@ for i = 1:length(seed_grid)
         prob_ude = ODEProblem(seird_nn!, u0, tspan, p_nn_temp)
         predict_ude = make_predict_ude(prob_ude, train_length)
 
-        run_model(beta_function, data, u0, seed_grid[i], predict_ude, beta_network, prob_ude; maxiters_adam = maxiters_adam, maxiters_lbfgs = maxiters_lbfgs, number_of_nn_inputs=number_of_nn_inputs, adam_learning_rate=adam_learning_rate)
+        run_model(beta_function, data, train_length, u0, seed_grid[i], predict_ude, beta_network, prob_ude; maxiters_adam = maxiters_adam, maxiters_lbfgs = maxiters_lbfgs, number_of_nn_inputs=number_of_nn_inputs, adam_learning_rate=adam_learning_rate)
     catch e
         println("Error occurred for seed $(seed_grid[i]): $e")
     end
