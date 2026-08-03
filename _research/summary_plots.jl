@@ -23,7 +23,7 @@ CONFIGURATION — edit these to match the sim you want
 
 location = "MA"
 model_name = "ude_single"
-sim_name = "UDE_single_beta=beta_exp_adam=2500_learning_rate=0.001_lbfgs=2000_number_of_nn_input=1_finalactivation=softplus_test=first160_val=200"
+sim_name = "UDE_single_beta=beta_exp_adam=2500_learning_rate=0.001_lbfgs=2000_number_of_nn_input=1_finalactivation=softplus_val=55_128"
 multistart = true
 MS_limit = 0.3
 
