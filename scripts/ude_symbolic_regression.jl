@@ -63,15 +63,19 @@ function symbolic_regression(sim_name,location, output_dir, obs, input_size)
     # Extract NN approximation
     norm_i_traj = I_nn ./ population
 
-    SR_input_1000, SR_input_days, nn_input_1000, nn_input_days, I_grid = build_sr_inputs(p_trained, norm_i_traj, input_size)
-
     # Evaluate neural network and extract approximation
-    nn_output_1000 = vec(beta_network(nn_input_1000, p_trained.nn_params, st_nn)[1])
     nn_output_days = vec(beta_network(norm_i_traj, p_trained.nn_params, st_nn)[1])
+
+    max_beta = maximum(nn_output_days)
+
+    SR_input_1000, SR_input_0_1, SR_input_days, nn_input_1000, nn_input_0_1, nn_input_days, I_grid, range_0_1 = build_sr_inputs(p_trained, norm_i_traj, max_beta, input_size)
     
+    nn_output_1000 = vec(beta_network(nn_input_1000, p_trained.nn_params, st_nn)[1])
+    nn_output_0_1 = vec(beta_network(nn_input_0_1, p_trained.nn_params, st_nn)[1])
+
     mach, r, best_equation, simplified_equation = run_symbolic_regression(SR_input_1000, nn_output_1000, output_dir; seed=1234)
 
-    return mach, r, best_equation, simplified_equation, SR_input_1000, SR_input_days, nn_input_days, nn_output_days, nn_input_1000, nn_output_1000, I_grid, I_nn, norm_i_traj
+    return mach, r, best_equation, simplified_equation, SR_input_1000, SR_input_0_1, SR_input_days, nn_input_days, nn_output_days, nn_input_1000, nn_output_1000, nn_input_0_1, nn_output_0_1, I_grid, range_0_1, I_nn, norm_i_traj
 end
 
 #=============================================================
@@ -99,8 +103,7 @@ days = data["days"]
 output_dir = joinpath(@__DIR__, "..", "scripts", "outputs", "$(sim_name)")
 plot_title = "NN approximation no noise"
 
-mach, r, best_equation, simplified_equation, SR_input_1000, SR_input_days, nn_input_days, nn_output_days, nn_input_1000, nn_output_1000, I_grid, I_nn, norm_i_traj = symbolic_regression(sim_name, location, output_dir, obs, input_size)
-
+mach, r, best_equation, simplified_equation, SR_input_1000, SR_input_0_1, SR_input_days, nn_input_days, nn_output_days, nn_input_1000, nn_output_1000, nn_input_0_1, nn_output_0_1, I_grid, range_0_1, I_nn, norm_i_traj= symbolic_regression(sim_name, location, output_dir, obs, input_size)
 # Save both report and machine to the same file
 JLD2.save(joinpath(output_dir, "SR_report.jld2"), "report", r, "mach", mach)
 
@@ -148,24 +151,24 @@ PLOT BETA BETEEN 0 AND 1
 =============================================================#
 
 # Evaluate the true beta function for the grid of 1000 points
-true_beta_1000 = beta_function(location, I_grid.*population)
+true_beta_0_1 = beta_function(location, range_0_1.*population)
 
 # Evaluate the SR equation for the grid of 1000 points
-SR_beta_1000 = reshape(predict(mach, (data=SR_input_1000, idx=r.best_idx)),:,1)
+SR_beta_0_1 = reshape(predict(mach, (data=SR_input_0_1, idx=r.best_idx)),:,1)
 
 # Evaluate the NN output for the grid of 1000 points
-NN_beta_1000 = reshape(nn_output_1000, :, 1)
+NN_beta_0_1 = reshape(nn_output_0_1, :, 1)
 
 # Evaluate nmse
-nmse_SR_true_1000 = loss_nmse(vec(SR_beta_1000), vec(true_beta_1000))
-nmse_SR_NN_1000   = loss_nmse(vec(SR_beta_1000), vec(NN_beta_1000))
-nmse_NN_true_1000 = loss_nmse(vec(NN_beta_1000), vec(true_beta_1000))
+nmse_SR_true_0_1 = loss_nmse(vec(SR_beta_0_1), vec(true_beta_0_1))
+nmse_SR_NN_0_1   = loss_nmse(vec(SR_beta_0_1), vec(NN_beta_0_1))
+nmse_NN_true_0_1 = loss_nmse(vec(NN_beta_0_1), vec(true_beta_0_1))
 
-x_hat_vs_beta = plot(I_grid, true_beta_1000, lw=2.5, label="True β", color=:black)
+x_hat_vs_beta = plot(range_0_1, true_beta_0_1, lw=2.5, label="True β", color=:black)
 
 
-plot!(x_hat_vs_beta, I_grid, SR_beta_1000, lw=2.5, ls=:dash, label="SR-recovered β", color=:red, alpha=0.8)
-plot!(x_hat_vs_beta, I_grid, NN_beta_1000, lw=2.5, ls=:dot, label="NN approximation", color=:lightblue, alpha=0.8)
+plot!(x_hat_vs_beta, range_0_1, SR_beta_0_1, lw=2.5, ls=:dash, label="SR-recovered β", color=:red, alpha=0.8)
+plot!(x_hat_vs_beta, range_0_1, NN_beta_0_1, lw=2.5, ls=:dot, label="NN approximation", color=:lightblue, alpha=0.8)
 xlabel!(x_hat_vs_beta, "x̂ = I / N")
 ylabel!(x_hat_vs_beta, "β")
 title!(x_hat_vs_beta, "Symbolic Regression on $(plot_title) vs true β\nEq: $(simplified_equation)", titlefontsize=8)
@@ -177,13 +180,13 @@ I_N_obs_max = maximum(SR_input_days)
 vline!(x_hat_vs_beta, [I_N_obs_min], linestyle=:dash, color=:gray40, linewidth=1.5, label="Min observed I/N")
 vline!(x_hat_vs_beta, [I_N_obs_max], linestyle=:dash, color=:gray70, linewidth=1.5, label="Max observed I/N")
 
-y_range = maximum(SR_beta_1000) - minimum(SR_beta_1000)
-x_ann = maximum(I_grid) * 0.60
-y_ann = minimum(SR_beta_1000) + y_range * 0.35
+y_range = maximum(SR_beta_0_1) - minimum(SR_beta_0_1)
+x_ann = maximum(range_0_1) * 0.60
+y_ann = minimum(SR_beta_0_1) + y_range * 0.35
 dy = y_range * 0.12
-annotate!(x_hat_vs_beta, x_ann, y_ann,        text("NMSE (NN vs SR) = $(round(nmse_SR_NN_1000, sigdigits=3))", :left, 9))
-annotate!(x_hat_vs_beta, x_ann, y_ann - dy,   text("NMSE (SR vs true) = $(round(nmse_SR_true_1000, sigdigits=3))", :left, 9))
-annotate!(x_hat_vs_beta, x_ann, y_ann - 2*dy, text("NMSE (NN vs true) = $(round(nmse_NN_true_1000, sigdigits=3))", :left, 9))
+annotate!(x_hat_vs_beta, x_ann, y_ann,        text("NMSE (NN vs SR) = $(round(nmse_SR_NN_0_1, sigdigits=3))", :left, 9))
+annotate!(x_hat_vs_beta, x_ann, y_ann - dy,   text("NMSE (SR vs true) = $(round(nmse_SR_true_0_1, sigdigits=3))", :left, 9))
+annotate!(x_hat_vs_beta, x_ann, y_ann - 2*dy, text("NMSE (NN vs true) = $(round(nmse_NN_true_0_1, sigdigits=3))", :left, 9))
 savefig(x_hat_vs_beta, joinpath(output_dir, "$(sim_name)_SR_beta_against_x_hat.png"))
 
 #=============================================================
@@ -281,12 +284,12 @@ savefig(p_complexity, joinpath(output_dir, "$(sim_name)_SR_complexity_vs_loss.pn
 
 
 # Plot differences against normalized x̂
-NN_minus_true = NN_beta_1000 - true_beta_1000
-SR_minus_true = SR_beta_1000 - true_beta_1000
+NN_minus_true = vec(NN_beta_0_1) - vec(true_beta_0_1)
+SR_minus_true = vec(SR_beta_0_1) - vec(true_beta_0_1)
 
 
-p_diff_xhat = plot(I_grid, NN_minus_true, lw=2.5, ls=:dot, label="y_hat - true β", color=:lightblue, alpha=0.8)
-plot!(p_diff_xhat, I_grid, SR_minus_true, lw=2.5, ls=:dot, label="SR result for y_hat - true β", color=:red)
+p_diff_xhat = plot(range_0_1, NN_minus_true, lw=2.5, ls=:dot, label="y_hat - true β", color=:lightblue, alpha=0.8)
+plot!(p_diff_xhat, range_0_1, SR_minus_true, lw=2.5, ls=:dot, label="SR result for y_hat - true β", color=:red)
 xlabel!(p_diff_xhat, "x̂=I/N")
 ylabel!(p_diff_xhat, "Difference in β")
 title!(p_diff_xhat, "Difference between true β and y_hat = $(plot_title) and SR approx \nEq: $(simplified_equation)", titlefontsize=8)
