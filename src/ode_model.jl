@@ -63,7 +63,7 @@ function run_seird_functional_form(beta_function, location, fixed_p, varying_p, 
 
     seird_functional! = make_seird_functional(beta_function, location, sigma, gamma)
     prob = ODEProblem(seird_functional!, u0, tspan, p)
-    sol = solve(prob, Rosenbrock23(), saveat=1.0, dense=false)
+    sol = solve(prob, Tsit5(), saveat=1.0, dense=false)
     
     return sol
 end
@@ -114,7 +114,7 @@ MAKE PREDICTION USING UDE MODEL
 function make_predict_ude(prob, train_length)
     function predict_ude(p_all, u0)
         new_prob = remake(prob, p = p_all, u0 = u0)
-        sol = solve(new_prob, Rosenbrock23(), saveat=1.0, dense=false)
+        sol = solve(new_prob, Tsit5(), saveat=1.0, dense=false)
         if sol.retcode != ReturnCode.Success || length(sol.t) < train_length
             return nothing
         end

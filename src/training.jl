@@ -9,11 +9,14 @@ function train_ude_single_dataset(p, predict_ude, training_data, u0; maxiters_ad
 
     # define training and validation time points
     # Find when the trajectory goes flat
-    flat_start = find_flat_start(training_data; window=14, rel_threshold=0.01)
-    println("Flat start found at time point: $(flat_start)")
-    train_cutoff = round(Int, 0.8 * flat_start)
-    train_tpts = collect(1:train_cutoff)
-    val_tpts   = setdiff(1:length(training_data), train_tpts)
+    #flat_start = find_flat_start(training_data; window=14, rel_threshold=0.01)
+    #println("Flat start found at time point: $(flat_start)")
+    #train_cutoff = round(Int, 0.8 * flat_start)
+    #train_tpts = collect(1:train_cutoff)
+    #val_tpts   = setdiff(1:length(training_data), train_tpts)
+
+    val_tpts = 5:5:length(training_data)
+    train_tpts = setdiff(1:length(training_data), val_tpts)
 
     # Create 1D vector to track losses during training
     train_losses = Float64[]

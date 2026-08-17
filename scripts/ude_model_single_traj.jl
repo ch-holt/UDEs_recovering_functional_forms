@@ -52,7 +52,7 @@ function run_model(beta_function, data, train_length, u0, seed, predict_ude, bet
 
     p_trained, train_losses_final, val_losses_final = train_ude_single_dataset(p_init, predict_ude, training_data, u0; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, adam_learning_rate=adam_learning_rate)
 
-    loc_foldername = "synthesised_$(location)"
+    loc_foldername = "synthetic_$(location)"
 
 	# Append a number to the end of the simulation to allow multiple runs of a single set of hyperparameters for ensemble predictions
 	model_iteration = 1
@@ -61,7 +61,7 @@ function run_model(beta_function, data, train_length, u0, seed, predict_ude, bet
 	end
 
     foldername = "simulation_v$(model_iteration)_seed=$(seed)"
-	filename = "synthesised_$(location)"
+	filename = "synthetic_$(location)"
 
     # Within the plots folder create a folder for each trajectory
     if !isdir(plotsdir("sims", model_name, sim_name, loc_foldername, foldername)) 
@@ -75,7 +75,7 @@ function run_model(beta_function, data, train_length, u0, seed, predict_ude, bet
 
     # Evaluate final long term results 
     long_term_prob= remake(prob_ude, p = p_trained, tspan = (1.0, 3*365.0), u0 = u0)
-    long_term_pred = solve(long_term_prob, Rosenbrock23(), saveat=1, dense = false)
+    long_term_pred = solve(long_term_prob, Tsit5(), saveat=1, dense = false)
 
     # Convert to a 1 x N matrix
     x_hat = long_term_pred[3, 1:length(data)]
@@ -170,12 +170,11 @@ DEFINE HYPERPARAMETERS
 =========================================================#
 
 # Number of data points used for training
-const train_length = 50
+const train_length = 365
 # Define the timespan for the ODE solver
 tspan = [1, train_length]
 
-# do 100 simulations 
-n_sims = 50
+# do 100 initialisations 
 location = "MA"
 
 
@@ -183,7 +182,7 @@ location = "MA"
 LOAD DATA
 =========================================================#
 
-dataset = JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_beta_exp", "synthesised_$(location).jld2"))
+dataset = JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_beta_exp", "synthetic_$(location).jld2"))
 
 # Extract infectious individuals and days from the dataset
 data = dataset["infectious"]
@@ -237,19 +236,16 @@ adam_learning_rate = 1e-3
 
 # Define strings for file names and directory for results
 model_name = "ude_single"
-sim_name ="UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_learning_rate=$(adam_learning_rate)_lbfgs=$(maxiters_lbfgs)_number_of_nn_input=$(number_of_nn_inputs)_finalactivation=$(final_activation_function)_traindata=$(train_length)"
+sim_name ="UDE_single_tsit5_beta=$(beta_function)_adam=$(maxiters_adam)_learning_rate=$(adam_learning_rate)_lbfgs=$(maxiters_lbfgs)_number_of_nn_input=$(number_of_nn_inputs)_finalactivation=$(final_activation_function)_traindata=$(train_length)"
 if !isdir(datadir("exp_pro","sims", model_name, sim_name)) 
 	mkpath(datadir("exp_pro","sims", model_name, sim_name))
 end
 
-seed_grid = rand(1:100000, 100)
-
-#for i = 1:length(seed_grid)
-for i = 1
+for i = 1:100
     # Catch any errors during the run so that the following seeds still run
     try
-        rng = Random.seed!(seed_grid[i])
-        println("Running simulation for seed $(seed_grid[i]) on thread $(Threads.threadid())")
+        rng = Random.seed!(i)
+        println("Running simulation for seed $(i) on thread $(Threads.threadid())")
         beta_network, p_nn_temp, st_nn = build_neural_network(rng, hidden_dims, input_size, output_size, 
                                     activation_function, final_activation_function)
 
@@ -257,9 +253,9 @@ for i = 1
         prob_ude = ODEProblem(seird_nn!, u0, tspan, p_nn_temp)
         predict_ude = make_predict_ude(prob_ude, train_length)
 
-        run_model(beta_function, data, train_length, u0, seed_grid[i], predict_ude, beta_network, prob_ude; maxiters_adam = maxiters_adam, maxiters_lbfgs = maxiters_lbfgs, number_of_nn_inputs=number_of_nn_inputs, adam_learning_rate=adam_learning_rate)
+        run_model(beta_function, data, train_length, u0, i, predict_ude, beta_network, prob_ude; maxiters_adam = maxiters_adam, maxiters_lbfgs = maxiters_lbfgs, number_of_nn_inputs=number_of_nn_inputs, adam_learning_rate=adam_learning_rate)
     catch e
-        println("Error occurred for seed $(seed_grid[i]): $e")
+        println("Error occurred for seed $(i): $e")
     end
 end
 

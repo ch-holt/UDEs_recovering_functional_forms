@@ -52,35 +52,38 @@ function summarise_results(sim_name_dir::String)
 end
 
 
-# Define simulation
-location = "MA"
-model_name = "ude_single"
-sim = "UDE_single_beta=beta_exp_adam=2500_learning_rate=0.001_lbfgs=2000_number_of_nn_input=1_finalactivation=softplus_val=55_128"
-sim_name_dir = datadir("exp_pro", "sims", "ude_single", sim, "synthesised_$(location)")
-MS_limit=0.3
 
-# Extract summary
-df= summarise_results(sim_name_dir)
+for train_length in [55, 60, 63, 65, 200, 365]
+    println("Processing training length: $(train_length)")
+    # Define simulation
+    location = "MA"
+    model_name = "ude_single"
+    sim = "UDE_single_beta=beta_exp_adam=2500_learning_rate=0.001_lbfgs=2000_number_of_nn_input=1_finalactivation=softplus_traindata=$(train_length)"
+    sim_name_dir = datadir("exp_pro", "sims", "ude_single", sim, "synthetic_$(location)")
+    MS_limit=0.3
 
-# Save full results to csv - for easy viewing
-out_path = joinpath(sim_name_dir, "results_summary.csv")
-CSV.write(out_path, df)
-println("Saved summary to: $out_path") 
+    # Extract summary
+    df= summarise_results(sim_name_dir)
 
-# Sort df from highest to lowest loss (nmse_traj)
-sort!(df, :nmse_traj, rev=false)
+    # Save full results to csv - for easy viewing
+    out_path = joinpath(sim_name_dir, "results_summary.csv")
+    CSV.write(out_path, df)
+    println("Saved summary to: $out_path") 
 
-# Define % of the number of rows to keep
-n_rows = size(df, 1)
-n_rows_MS = Int(floor(n_rows * MS_limit))
+    # Sort df from highest to lowest loss (nmse_traj)
+    sort!(df, :nmse_traj, rev=false)
 
-# Create list of seeds in the top % of the results
-seeds_to_keep = df[1:end-n_rows_MS, :seed]
+    # Define % of the number of rows to keep
+    n_rows = size(df, 1)
+    n_rows_MS = Int(floor(n_rows * MS_limit))
 
-# Write into a jld2 file    
-seeds_to_keep_path = joinpath(sim_name_dir, "seeds_to_keep_MS=$(MS_limit).jld2")
-@save seeds_to_keep_path seeds_to_keep  
-println("Saved usable seeds to: $seeds_to_keep_path") 
+    # Create list of seeds in the top % of the results
+    seeds_to_keep = df[1:end-n_rows_MS, :seed]
 
+    # Write into a jld2 file    
+    seeds_to_keep_path = joinpath(sim_name_dir, "seeds_to_keep_MS=$(MS_limit).jld2")
+    @save seeds_to_keep_path seeds_to_keep  
+    println("Saved usable seeds to: $seeds_to_keep_path") 
+end
 
 

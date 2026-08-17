@@ -84,6 +84,10 @@ function find_flat_start(data; window::Int=14, rel_threshold::Float64=0.01)
     return min(flat_start, n)
 end
 
+function find_peak(data)
+    return argmax(data)
+end
+
 
 #=============================================================
 ADD GAUSSIAN NOISE

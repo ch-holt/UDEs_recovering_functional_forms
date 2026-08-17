@@ -6,7 +6,7 @@ function load_trajectories(locations, beta_function)
     root = datadir("exp_pro","synthetic_data","synthetic_trajectories_$(beta_function)")
     trajectories = []
     for location in locations
-        filename = "synthesised_$(location).jld2"
+        filename = "synthetic_$(location).jld2"
         dataset = JLD2.load(joinpath(root, filename))
         varying_p = ComponentArray(
             population = dataset["varying_p"]["population"],
