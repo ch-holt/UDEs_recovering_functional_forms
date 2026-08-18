@@ -145,7 +145,9 @@ for folder in seed_folders
     # Find UDE results for this seed
     I_nn, results = extract_ude(root, obs, folder)
 
-    mach, r, best_equation, simplified_equation, SR_input_1000, SR_input_0_1, SR_input_days, nn_input_days, nn_output_days, nn_input_1000, nn_output_1000, nn_input_0_1, nn_output_0_1, I_grid, range_0_1, I_nn, norm_i_traj = symbolic_regression(I_nn, results, output_dir, input_size) 
+    t_start_sr = time()
+    mach, r, best_equation, simplified_equation, SR_input_1000, SR_input_0_1, SR_input_days, nn_input_days, nn_output_days, nn_input_1000, nn_output_1000, nn_input_0_1, nn_output_0_1, I_grid, range_0_1, I_nn, norm_i_traj = symbolic_regression(I_nn, results, output_dir, input_size)
+    elapsed_sr = time() - t_start_sr 
 
     #=============================================================
     MAKE PLOTS
@@ -309,7 +311,8 @@ for folder in seed_folders
     savefig(panel, joinpath(output_dir, "$(sim_name)_panel.png"))
 
     # Save both report and machine to the same file and all trajectories
-    JLD2.save(joinpath(output_dir, "SR_report.jld2"), "report", r, "mach", mach, 
-        "SR_beta_days", SR_beta_days, "SR_beta_0_1", SR_beta_0_1, "SR_inf", i_sr)
+    JLD2.save(joinpath(output_dir, "SR_report.jld2"), "report", r, "mach", mach,
+        "SR_beta_days", SR_beta_days, "SR_beta_0_1", SR_beta_0_1, "SR_inf", i_sr,
+        "elapsed_seconds", elapsed_sr)
 
 end

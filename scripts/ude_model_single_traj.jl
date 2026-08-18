@@ -24,13 +24,13 @@ using Random
 # Call module
 using UDE_FUNCTIONAL_FORMS
 
-
 #========================================================
 MAIN FUNCTION TO TRAIN THE UDE AND SAVE THE RESULTS
 =========================================================# 
 
 function run_model(beta_function, data, train_length, u0, seed, predict_ude, beta_network, prob_ude; maxiters_adam, maxiters_lbfgs, number_of_nn_inputs, adam_learning_rate)
     println("Starting run: on thread $(Threads.threadid())")
+    t_start = time()
     rng = Random.seed!(seed)
 
     # Initialise parameters
@@ -155,10 +155,13 @@ function run_model(beta_function, data, train_length, u0, seed, predict_ude, bet
     # Save the plot
     savefig(beta_against_xhat_plot, joinpath(plot_dir, "beta_against_xhat_plot.png"))
 
+    elapsed = time() - t_start
+
     mkpath(datadir("exp_pro","sims", model_name, sim_name, loc_foldername, foldername))
 	JLD2.save(datadir("exp_pro","sims", model_name, sim_name, loc_foldername, foldername, "results.jld2"),
 		"p", p_trained, "train_losses", train_losses_final, "val_losses", val_losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_traj,
-		"days", days, "seed", seed, "loss_traj", loss_traj, "loss_beta", loss_beta, "loss_I_grid", loss_I_grid)
+		"days", days, "seed", seed, "loss_traj", loss_traj, "loss_beta", loss_beta, "loss_I_grid", loss_I_grid,
+        "elapsed_seconds", elapsed)
 
 	println("Finished run: $(location) on thread $(Threads.threadid())")
 
@@ -228,8 +231,8 @@ activation_function = gelu
 final_activation_function = softplus
 
 beta_function = beta_exp
-maxiters_adam = 2
-maxiters_lbfgs = 2
+maxiters_adam = 2500
+maxiters_lbfgs = 2000
 number_of_nn_inputs = 1
 
 adam_learning_rate = 1e-3

@@ -32,6 +32,7 @@ MAIN FUNCTION TO TRAIN THE UDE AND SAVE THE RESULTS
 
 function run_model(locations, beta_function, beta_network; maxiters_adam, maxiters_lbfgs, number_of_nn_inputs)
     println("Starting run: on thread $(Threads.threadid())")
+    t_start = time()
 
     # Initialise parameters
     nn_params, st = Lux.setup(rng, beta_network)
@@ -139,7 +140,7 @@ function run_model(locations, beta_function, beta_network; maxiters_adam, maxite
         # In this folder save the infectious trajectory results and the beta results for this trajectory
         JLD2.save(root,
             "p", p_trained, "losses", losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_traj,
-            "days", days)
+            "days", days, "elapsed_seconds", time() - t_start)
     
         #========================
         CREATE PLOTS
