@@ -50,7 +50,7 @@ function run_model(beta_function, data, train_length, u0, seed, predict_ude, bet
 
     training_data = data[1:train_length]
 
-    p_trained, train_losses_final, val_losses_final = train_ude_single_dataset(p_init, predict_ude, training_data, u0; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, adam_learning_rate=adam_learning_rate)
+    p_trained, train_losses_final, val_losses_final = train_ude_single_dataset(p_init, predict_ude, training_data, u0, beta_function, location; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, adam_learning_rate=adam_learning_rate)
 
     loc_foldername = "synthetic_$(location)"
 
@@ -228,8 +228,8 @@ activation_function = gelu
 final_activation_function = softplus
 
 beta_function = beta_exp
-maxiters_adam = 2500
-maxiters_lbfgs = 2000
+maxiters_adam = 2
+maxiters_lbfgs = 2
 number_of_nn_inputs = 1
 
 adam_learning_rate = 1e-3

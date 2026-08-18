@@ -30,17 +30,20 @@ function summarise_results(sim_name_dir::String)
 
         data = JLD2.load(results_file)
 
-        seed       = get(data, "seed",        missing)
-        loss_traj  = get(data, "loss_traj",   missing)
-        loss_beta  = get(data, "loss_beta",   missing)
+        seed        = get(data, "seed",        missing)
+        loss_traj   = get(data, "loss_traj",   missing)
+        loss_beta   = get(data, "loss_beta",   missing)
         loss_I_grid = get(data, "loss_I_grid", missing)
+        val_losses  = get(data, "val_losses",  missing)
+        best_val_loss = ismissing(val_losses) ? missing : minimum(val_losses)
 
         push!(rows, (
-            sim_folder  = basename(sim_folder),
-            seed        = seed,
-            nmse_traj   = loss_traj,
-            nmse_beta   = loss_beta,
-            nmse_I_grid = loss_I_grid,
+            sim_folder    = basename(sim_folder),
+            seed          = seed,
+            nmse_traj     = loss_traj,
+            nmse_beta     = loss_beta,
+            nmse_I_grid   = loss_I_grid,
+            best_val_loss = best_val_loss,
         ))
     end
 
@@ -52,15 +55,16 @@ function summarise_results(sim_name_dir::String)
 end
 
 
+const train_length = 365
 
-for train_length in [55, 60, 63, 65, 200, 365]
+for MS_limit in [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
     println("Processing training length: $(train_length)")
     # Define simulation
     location = "MA"
     model_name = "ude_single"
-    sim = "UDE_single_beta=beta_exp_adam=2500_learning_rate=0.001_lbfgs=2000_number_of_nn_input=1_finalactivation=softplus_traindata=$(train_length)"
+    sim = "UDE_single_tsit5_beta=beta_exp_adam=2500_learning_rate=0.001_lbfgs=2000_number_of_nn_input=1_finalactivation=softplus_traindata=$(train_length)"
     sim_name_dir = datadir("exp_pro", "sims", "ude_single", sim, "synthetic_$(location)")
-    MS_limit=0.3
+    #MS_limit=0.3
 
     # Extract summary
     df= summarise_results(sim_name_dir)
@@ -70,8 +74,8 @@ for train_length in [55, 60, 63, 65, 200, 365]
     CSV.write(out_path, df)
     println("Saved summary to: $out_path") 
 
-    # Sort df from highest to lowest loss (nmse_traj)
-    sort!(df, :nmse_traj, rev=false)
+    # Sort df from highest to lowest loss (validation)
+    sort!(df, :best_val_loss, rev=false)
 
     # Define % of the number of rows to keep
     n_rows = size(df, 1)
@@ -81,7 +85,7 @@ for train_length in [55, 60, 63, 65, 200, 365]
     seeds_to_keep = df[1:end-n_rows_MS, :seed]
 
     # Write into a jld2 file    
-    seeds_to_keep_path = joinpath(sim_name_dir, "seeds_to_keep_MS=$(MS_limit).jld2")
+    seeds_to_keep_path = joinpath(sim_name_dir, "val_loss_seeds_to_keep_MS=$(MS_limit).jld2")
     @save seeds_to_keep_path seeds_to_keep  
     println("Saved usable seeds to: $seeds_to_keep_path") 
 end

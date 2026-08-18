@@ -24,12 +24,13 @@ using UDE_FUNCTIONAL_FORMS
 #========================================================
 CONFIGURATION
 =========================================================#
-for train_length in [55, 60, 63, 65, 200, 365]
+const train_length = 365
+
+for MS_limit in [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
     location = "MA"
     model_name = "ude_single"
-    sim_name = "UDE_single_beta=beta_exp_adam=2500_learning_rate=0.001_lbfgs=2000_number_of_nn_input=1_finalactivation=softplus_traindata=$(train_length)"
+    sim_name = "UDE_single_tsit5_beta=beta_exp_adam=2500_learning_rate=0.001_lbfgs=2000_number_of_nn_input=1_finalactivation=softplus_traindata=$(train_length)"
     multistart = true
-    MS_limit = 0.3
 
     # Must match the architecture used in training
     hidden_dims          = 5
@@ -51,7 +52,7 @@ for train_length in [55, 60, 63, 65, 200, 365]
     =========================================================#
 
     # If multistart then only overlay seeds_to_keep
-    sim_dir = datadir("exp_pro", "sims", model_name, sim_name, "synthesised_$(location)")
+    sim_dir = datadir("exp_pro", "sims", model_name, sim_name, "synthetic_$(location)")
     seed_folders = get_seed_folders(sim_dir, multistart, MS_limit)
 
     #========================================================
@@ -59,7 +60,7 @@ for train_length in [55, 60, 63, 65, 200, 365]
     =========================================================#
 
     dataset = JLD2.load(datadir("exp_pro", "synthetic_data", "synthetic_trajectories_beta_exp",
-                                "synthesised_$(location).jld2"))
+                                "synthetic_$(location).jld2"))
     true_inf = dataset["infectious"]
     days = collect(dataset["days"])
 
@@ -113,20 +114,20 @@ for train_length in [55, 60, 63, 65, 200, 365]
     SAVE
     =========================================================#
 
-    save_dir = plotsdir("sims", model_name, sim_name, "synthesised_$(location)")
+    save_dir = plotsdir("sims", model_name, sim_name, "synthetic_$(location)")
     mkpath(save_dir)
 
     panel = plot(traj_plot, beta_time_plot, beta_01_plot; layout=(1, 3), size=(1800, 500))
     if multistart
-        savefig(panel, joinpath(save_dir, "panel_overlay_MS=$(MS_limit).png"))
-        savefig(traj_plot,      joinpath(save_dir, "traj_overlay_MS=$(MS_limit).png"))
-        savefig(beta_time_plot, joinpath(save_dir, "beta_time_overlay_MS=$(MS_limit).png"))
-        savefig(beta_01_plot,   joinpath(save_dir, "beta_01_overlay_MS=$(MS_limit).png"))
+        savefig(panel, joinpath(save_dir, "val_loss_panel_overlay_MS=$(MS_limit).png"))
+        savefig(traj_plot,      joinpath(save_dir, "val_loss_traj_overlay_MS=$(MS_limit).png"))
+        savefig(beta_time_plot, joinpath(save_dir, "val_loss_beta_time_overlay_MS=$(MS_limit).png"))
+        savefig(beta_01_plot,   joinpath(save_dir, "val_loss_beta_01_overlay_MS=$(MS_limit).png"))
     else
-        savefig(panel, joinpath(save_dir, "panel_overlay.png"))
-        savefig(traj_plot,      joinpath(save_dir, "traj_overlay.png"))
-        savefig(beta_time_plot, joinpath(save_dir, "beta_time_overlay.png"))
-        savefig(beta_01_plot,   joinpath(save_dir, "beta_01_overlay.png"))
+        savefig(panel, joinpath(save_dir, "val_loss_panel_overlay.png"))
+        savefig(traj_plot,      joinpath(save_dir, "val_loss_traj_overlay.png"))
+        savefig(beta_time_plot, joinpath(save_dir, "val_loss_beta_time_overlay.png"))
+        savefig(beta_01_plot,   joinpath(save_dir, "val_loss_beta_01_overlay.png"))
     end
 
     println("Done — plots saved to:\n  $(save_dir)")
@@ -139,7 +140,7 @@ SR_inf_rows = Vector{Vector{Float64}}()
 SR_beta_time_rows = Vector{Vector{Float64}}()
 SR_beta_01_rows = Vector{Vector{Float64}}()
 
-output_dir = joinpath(@__DIR__, "..", "scripts", "outputs", "$(sim_name)", "synthesised_$(location)")
+output_dir = joinpath(@__DIR__, "..", "scripts", "outputs", "$(sim_name)", "synthetic_$(location)")
 
 for folder in seed_folders
     result_path = joinpath(output_dir, folder, "SR_report.jld2")

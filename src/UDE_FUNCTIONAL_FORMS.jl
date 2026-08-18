@@ -16,6 +16,7 @@ using SymbolicUtils
 using DataFrames
 using Plots
 using ForecastBaselines
+using Statistics
 
 const _ground_truth = JLD2.load(datadir("exp_raw", "estimated_ground_truth_parameters.jld2"))
 const POPULATION = _ground_truth["POPULATION"]
