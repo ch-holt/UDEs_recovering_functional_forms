@@ -83,7 +83,7 @@ DEFINE PARAMETERS
 sim_name = "UDE_single_beta=beta_exp_adam=2500_learning_rate=0.001_lbfgs=2000_number_of_nn_input=1_finalactivation=softplus_test=first160_val=200"
 location = "MA"
 beta_function = beta_exp
-root = datadir("exp_pro","sims",  "ude_single", sim_name, "synthesised_$(location)")
+root = datadir("exp_pro","sims",  "ude_single", sim_name, "synthetic_$(location)")
 
 # Number of NN inputs (single vs multiple datset settings)
 input_size = 1
@@ -92,7 +92,7 @@ multistart = true
 MS_limit = 0.3
 
 # Load the observed data
-data = JLD2.load(DrWatson.datadir("exp_pro","synthetic_data","synthetic_trajectories_beta_exp", "synthesised_$(location).jld2"))
+data = JLD2.load(DrWatson.datadir("exp_pro","synthetic_data","synthetic_trajectories_beta_exp", "synthetic_$(location).jld2"))
 
 # Just use infectious trajectory
 obs = data["infectious"]
@@ -139,7 +139,7 @@ seed_folders = get_seed_folders(root, multistart, MS_limit)
 for folder in seed_folders
 
     # Create output directory
-    output_dir = joinpath(@__DIR__, "..", "scripts", "outputs", "$(sim_name)", "synthesised_$(location)", folder)
+    output_dir = joinpath(@__DIR__, "..", "scripts", "outputs", "$(sim_name)", "synthetic_$(location)", folder)
     plot_title = "NN approximation no noise"
 
     # Find UDE results for this seed

@@ -19,6 +19,7 @@ using DifferentialEquations
 using ComponentArrays
 using DSP
 using Plots 
+using Distributions
 
 # Call module
 using UDE_FUNCTIONAL_FORMS
@@ -33,7 +34,7 @@ function generate_ground_truth_beta(beta_functions)
         for location in keys(POPULATION)
             println("Generating synthetic trajectories for $(location)")
             beta_name = string(beta_function)
-            dataset = JLD2.load(datadir("exp_pro", "synthetic_data", "synthetic_trajectories_$(beta_name)", "synthesised_$(location).jld2"))
+            dataset = JLD2.load(datadir("exp_pro", "synthetic_data", "synthetic_trajectories_$(beta_name)", "synthetic_$(location).jld2"))
 
             # Extract infectious individuals and days from the dataset
             obs = dataset["infectious"]
@@ -99,7 +100,7 @@ function generate_synthetic_data(fixed_p, varying_p, obs_length, location, beta_
     d_traj = sim[5, :]
 
     # Save the result
-    fname = "synthesised_$(location).jld2"
+    fname = "synthetic_$(location).jld2"
     beta_name = string(beta_function)
 	mkpath(datadir("exp_pro","synthetic_data","synthetic_trajectories_$(beta_name)"))
 
@@ -160,4 +161,4 @@ for location in keys(POPULATION)
     generate_synthetic_data(fixed_p, varying_p, 365, location, beta_function)
 end
 
-generate_ground_truth_beta([beta_exp, beta_rational])
+#generate_ground_truth_beta([beta_exp, beta_rational])

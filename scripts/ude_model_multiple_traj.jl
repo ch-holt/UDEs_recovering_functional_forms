@@ -67,7 +67,7 @@ function run_model(locations, beta_function, beta_network; maxiters_adam, maxite
 
     # Read all files/folders in the root directory
     for location in locations
-        filename = "synthesised_$(location)"
+        filename = "synthetic_$(location)"
         # Extract trajectory of infectious individuals
         dataset = JLD2.load(datadir("exp_pro","synthetic_data", "synthetic_trajectories_beta_exp", filename*".jld2"))
         data = dataset["infectious"]
@@ -102,7 +102,7 @@ function run_model(locations, beta_function, beta_network; maxiters_adam, maxite
 
         # Evaluate prediction for the trained parameters on the current trajectory
         long_term_prob= remake(prob_ude, u0 = init_state, p = p_all)
-        long_term_pred = solve(long_term_prob, Rosenbrock23(), saveat=1, dense = false)
+        long_term_pred = solve(long_term_prob, Tsit5(), saveat=1, dense = false)
         
         # Convert to a 1 x N matrix
         x_hat = long_term_pred[3, 1:length(data)]

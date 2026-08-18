@@ -9,7 +9,7 @@ function summarise_results(sim_name_dir::String)
 
     rows = []
 
-    # Each location has its own subfolder (e.g. synthesised_MA)
+    # Each location has its own subfolder (e.g. synthetic_MA)
     for loc_folder in readdir(sim_name_dir; join=true)
         !isdir(loc_folder) && continue
         location = basename(loc_folder)
