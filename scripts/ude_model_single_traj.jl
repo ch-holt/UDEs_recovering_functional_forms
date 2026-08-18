@@ -28,7 +28,7 @@ using UDE_FUNCTIONAL_FORMS
 MAIN FUNCTION TO TRAIN THE UDE AND SAVE THE RESULTS
 =========================================================# 
 
-function run_model(beta_function, data, train_length, u0, seed, predict_ude, beta_network, prob_ude; maxiters_adam, maxiters_lbfgs, number_of_nn_inputs, adam_learning_rate)
+function run_model(beta_function, location, data, train_length, u0, seed, predict_ude, beta_network, prob_ude; maxiters_adam, maxiters_lbfgs, adam_learning_rate, number_of_nn_inputs=1, model_name, sim_name, days, delta, population)
     println("Starting run: on thread $(Threads.threadid())")
     t_start = time()
     rng = Random.seed!(seed)
@@ -54,13 +54,7 @@ function run_model(beta_function, data, train_length, u0, seed, predict_ude, bet
 
     loc_foldername = "synthetic_$(location)"
 
-	# Append a number to the end of the simulation to allow multiple runs of a single set of hyperparameters for ensemble predictions
-	model_iteration = 1
-	while isdir(datadir("exp_pro","sims", model_name, sim_name, loc_foldername, "simulation_v$(model_iteration)"))
-		model_iteration += 1
-	end
-
-    foldername = "simulation_v$(model_iteration)_seed=$(seed)"
+    foldername = "simulation_seed=$(seed)"
 	filename = "synthetic_$(location)"
 
     # Within the plots folder create a folder for each trajectory
@@ -177,20 +171,6 @@ const train_length = 365
 # Define the timespan for the ODE solver
 tspan = [1, train_length]
 
-# do 100 initialisations 
-location = "MA"
-
-
-#========================================================
-LOAD DATA
-=========================================================#
-
-dataset = JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_beta_exp", "synthetic_$(location).jld2"))
-
-# Extract infectious individuals and days from the dataset
-data = dataset["infectious"]
-days = dataset["days"]
-
 #========================================================
 DEFINE INITIAL STATE
 =========================================================#
@@ -206,22 +186,8 @@ const E0 = 1.0
 const R0_recovered = 0.0
 const D0 = 0.0
 
-population = POPULATION[location]
-prevalence = PREVALENCE[location]
-delta = DELTA[location]
-R0_reproduction = R0_REPRODUCTION[location]
-zeta = ZETA[location]
-
-# Derive other parameters
-beta0 = R0_reproduction * (gamma + delta)
-I0 = max(1.0, prevalence * population)
-S0 = population - E0 - I0 - R0_recovered - D0
-
-# Define initial state
-u0 = [S0, E0, I0, R0_recovered, D0]
-
 #========================================================
-SET UP MODEL
+DEFINE MODEL SETTINGS (outside location loop to avoid scoping issues)
 =========================================================#
 
 hidden_dims = 5
@@ -229,38 +195,67 @@ input_size = 1
 output_size = 1
 activation_function = gelu
 final_activation_function = softplus
-
-beta_function = beta_exp
-maxiters_adam = 2500
-maxiters_lbfgs = 2000
 number_of_nn_inputs = 1
-
 adam_learning_rate = 1e-3
 
-# Define strings for file names and directory for results
+beta_function = beta_exp
+maxiters_adam = 2
+maxiters_lbfgs = 2
+
 model_name = "ude_single"
-sim_name ="UDE_single_tsit5_beta=$(beta_function)_adam=$(maxiters_adam)_learning_rate=$(adam_learning_rate)_lbfgs=$(maxiters_lbfgs)_number_of_nn_input=$(number_of_nn_inputs)_finalactivation=$(final_activation_function)_traindata=$(train_length)"
-if !isdir(datadir("exp_pro","sims", model_name, sim_name)) 
-	mkpath(datadir("exp_pro","sims", model_name, sim_name))
+sim_name = "UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_traindata=$(train_length)"
+
+if !isdir(datadir("exp_pro","sims", model_name, sim_name))
+    mkpath(datadir("exp_pro","sims", model_name, sim_name))
 end
 
-for i = 1:100
-    # Catch any errors during the run so that the following seeds still run
-    try
-        rng = Random.seed!(i)
-        println("Running simulation for seed $(i) on thread $(Threads.threadid())")
-        beta_network, p_nn_temp, st_nn = build_neural_network(rng, hidden_dims, input_size, output_size, 
-                                    activation_function, final_activation_function)
+# do 100 initialisations
+for location in keys(POPULATION)
+    println("Running simulation for location: $(location)")
 
-        seird_nn! = make_seird_nn(beta_network, st_nn, sigma, gamma, input_size)
-        prob_ude = ODEProblem(seird_nn!, u0, tspan, p_nn_temp)
-        predict_ude = make_predict_ude(prob_ude, train_length)
+    #========================================================
+    LOAD DATA
+    =========================================================#
 
-        run_model(beta_function, data, train_length, u0, i, predict_ude, beta_network, prob_ude; maxiters_adam = maxiters_adam, maxiters_lbfgs = maxiters_lbfgs, number_of_nn_inputs=number_of_nn_inputs, adam_learning_rate=adam_learning_rate)
-    catch e
-        println("Error occurred for seed $(i): $e")
+    dataset = JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_beta_exp", "synthetic_$(location).jld2"))
+
+    local data = dataset["infectious"]
+    local days = dataset["days"]
+
+    local population = POPULATION[location]
+    local prevalence = PREVALENCE[location]
+    local delta = DELTA[location]
+    local R0_reproduction = R0_REPRODUCTION[location]
+    local zeta = ZETA[location]
+
+    # Derive other parameters
+    local beta0 = R0_reproduction * (gamma + delta)
+    local I0 = max(1.0, prevalence * population)
+    local S0 = population - E0 - I0 - R0_recovered - D0
+
+    # Define initial state
+    local u0 = [S0, E0, I0, R0_recovered, D0]
+
+    for i = 1:1
+        # Catch any errors during the run so that the following seeds still run
+        try
+            local rng = Random.seed!(i)
+            println("Running simulation for seed $(i) on thread $(Threads.threadid())")
+            local beta_network, p_nn_temp, st_nn = build_neural_network(rng, hidden_dims, input_size, output_size,
+                                        activation_function, final_activation_function)
+
+            local seird_nn! = make_seird_nn(beta_network, st_nn, sigma, gamma, input_size)
+            local prob_ude = ODEProblem(seird_nn!, u0, tspan, p_nn_temp)
+            local predict_ude = make_predict_ude(prob_ude, train_length)
+
+            run_model(beta_function, location, data, train_length, u0, i, predict_ude, beta_network, prob_ude;
+                maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs,
+                number_of_nn_inputs=number_of_nn_inputs, adam_learning_rate=adam_learning_rate,
+                model_name=model_name, sim_name=sim_name, days=days, delta=delta, population=population)
+        catch e
+            println("Error occurred for seed $(i): $e")
+        end
     end
 end
-
 
 

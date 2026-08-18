@@ -119,15 +119,15 @@ for MS_limit in [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 
     panel = plot(traj_plot, beta_time_plot, beta_01_plot; layout=(1, 3), size=(1800, 500))
     if multistart
-        savefig(panel, joinpath(save_dir, "val_loss_panel_overlay_MS=$(MS_limit).png"))
-        savefig(traj_plot,      joinpath(save_dir, "val_loss_traj_overlay_MS=$(MS_limit).png"))
-        savefig(beta_time_plot, joinpath(save_dir, "val_loss_beta_time_overlay_MS=$(MS_limit).png"))
-        savefig(beta_01_plot,   joinpath(save_dir, "val_loss_beta_01_overlay_MS=$(MS_limit).png"))
+        savefig(panel, joinpath(save_dir, "panel_overlay_MS=$(MS_limit).png"))
+        savefig(traj_plot,      joinpath(save_dir, "traj_overlay_MS=$(MS_limit).png"))
+        savefig(beta_time_plot, joinpath(save_dir, "beta_time_overlay_MS=$(MS_limit).png"))
+        savefig(beta_01_plot,   joinpath(save_dir, "beta_01_overlay_MS=$(MS_limit).png"))
     else
-        savefig(panel, joinpath(save_dir, "val_loss_panel_overlay.png"))
-        savefig(traj_plot,      joinpath(save_dir, "val_loss_traj_overlay.png"))
-        savefig(beta_time_plot, joinpath(save_dir, "val_loss_beta_time_overlay.png"))
-        savefig(beta_01_plot,   joinpath(save_dir, "val_loss_beta_01_overlay.png"))
+        savefig(panel, joinpath(save_dir, "panel_overlay.png"))
+        savefig(traj_plot,      joinpath(save_dir, "traj_overlay.png"))
+        savefig(beta_time_plot, joinpath(save_dir, "beta_time_overlay.png"))
+        savefig(beta_01_plot,   joinpath(save_dir, "beta_01_overlay.png"))
     end
 
     println("Done — plots saved to:\n  $(save_dir)")

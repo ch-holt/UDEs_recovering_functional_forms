@@ -44,12 +44,7 @@ function run_model(locations, beta_function, beta_network; maxiters_adam, maxite
     
     # Save the trained parameters and losses for the combined trajectories
 
-    # Create numbered simulation folders to allow multiple runs of a single set of hyperparameters 
-    model_iteration = 1
-    while isdir(datadir("exp_pro","sims", model_name, sim_name, "simulation_v$(model_iteration)"))
-        model_iteration += 1
-    end
-    foldername = "simulation_v$model_iteration"
+    foldername = "simulation_seed=$(seed)"
 
     save(datadir("exp_pro","sims", model_name, sim_name, foldername, "training_results.jld2"), 
     "p_trained", p_trained, "losses_final", losses_final)

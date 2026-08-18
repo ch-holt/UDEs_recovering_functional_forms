@@ -49,10 +49,10 @@ function get_seed_folders(root, multistart, MS_limit)
         # Find all seed folders kept
     # If multistart then only use seeds_to_keep
     if !multistart
-        seed_folders   = filter(f -> occursin(r"simulation_v1+_seed=", f), readdir(root))
+        seed_folders   = filter(f -> occursin(r"simulation_seed=", f), readdir(root))
     else
         seeds_to_keep = JLD2.load(joinpath(root, "seeds_to_keep_MS=$(MS_limit).jld2"))["seeds_to_keep"]
-        seed_folders = ["simulation_v1_seed=$(s)" for s in seeds_to_keep]
+        seed_folders = ["simulation_seed=$(s)" for s in seeds_to_keep]
     end
     println("Found $(length(seed_folders)) seed simulations in $(root)")
     return seed_folders

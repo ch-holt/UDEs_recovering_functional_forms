@@ -20,10 +20,10 @@ using UDE_FUNCTIONAL_FORMS
 function summarise_results(sim_name_dir::String)
 
     rows = []
-    # Each seed run is stored in simulation_v*_seed=* subfolders
+    # Each seed run is stored in simulation_seed=* subfolders
     for sim_folder in readdir(sim_name_dir; join=true)
         !isdir(sim_folder) && continue
-        !occursin("simulation_v", basename(sim_folder)) && continue
+        !occursin("simulation_seed=", basename(sim_folder)) && continue
 
         results_file = joinpath(sim_folder, "results.jld2")
         !isfile(results_file) && continue
@@ -85,7 +85,7 @@ for MS_limit in [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
     seeds_to_keep = df[1:end-n_rows_MS, :seed]
 
     # Write into a jld2 file    
-    seeds_to_keep_path = joinpath(sim_name_dir, "val_loss_seeds_to_keep_MS=$(MS_limit).jld2")
+    seeds_to_keep_path = joinpath(sim_name_dir, "seeds_to_keep_MS=$(MS_limit).jld2")
     @save seeds_to_keep_path seeds_to_keep  
     println("Saved usable seeds to: $seeds_to_keep_path") 
 end
