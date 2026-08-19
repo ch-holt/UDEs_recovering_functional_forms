@@ -49,10 +49,10 @@ function get_seed_folders(root, multistart, MS_limit)
         # Find all seed folders kept
     # If multistart then only use seeds_to_keep
     if !multistart
-        seed_folders   = filter(f -> occursin(r"simulation_v1+_seed=", f), readdir(root))
+        seed_folders   = filter(f -> occursin(r"simulation_seed=", f), readdir(root))
     else
         seeds_to_keep = JLD2.load(joinpath(root, "seeds_to_keep_MS=$(MS_limit).jld2"))["seeds_to_keep"]
-        seed_folders = ["simulation_v1_seed=$(s)" for s in seeds_to_keep]
+        seed_folders = ["simulation_seed=$(s)" for s in seeds_to_keep]
     end
     println("Found $(length(seed_folders)) seed simulations in $(root)")
     return seed_folders
@@ -90,20 +90,20 @@ end
 
 
 #=============================================================
-ADD GAUSSIAN NOISE
+ADD NEGATIVE BINOMIAL NOISE
 ==============================================================# 
 
-function add_gaussian_noise(noise_SD, data, rng)
 
-    # add Gaussian noise
-    sd = noise_SD * max(0.5, maximum(data))
-    noise = randn(rng, length(data)) .* sd
-    noisy_beta = data .+ noise
-
-    # Remove negative values
-    noisy_beta = max.(noisy_beta, 0.0)
-
-    return noisy_beta
+function add_neg_bin_noise(data, noise_level)
+    # Fix a seed for reproducibility
+    rng=Random.seed!(1234)
+    if noise_level == 0
+        return copy(data), Inf
+    end
+    r = 1 / noise_level^2
+    p = clamp.(r ./ (r .+ data), nextfloat(0.0), 1.0)
+    noisy_data = rand.(rng, NegativeBinomial.(r, p))
+    return noisy_data, r
 end
 
 #=============================================================

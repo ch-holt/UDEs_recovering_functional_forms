@@ -28,6 +28,7 @@ CONFIGURATION
 location   = "MA"
 model_name = "ude_single"
 sim_name   = "UDE_single_tsit5_beta=beta_exp_adam=2500_learning_rate=0.001_lbfgs=2000_number_of_nn_input=1_finalactivation=softplus_traindata=365_mid20beta"
+noise = 0
 
 MS_limits  = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 
@@ -46,8 +47,9 @@ beta_network, _, st_nn = build_neural_network(rng, hidden_dims, input_size, 1,
                                                activation_fn, final_activation_fn)
 population = POPULATION[location]
 
+# Extract the ground truth (no noise)
 dataset = JLD2.load(datadir("exp_pro", "synthetic_data", "synthetic_trajectories_beta_exp",
-                             "synthetic_$(location).jld2"))
+                             "synthetic_$(location)", "noise=0.jld2"))
 true_inf = dataset["infectious"]
 days     = collect(dataset["days"])
 
@@ -55,8 +57,9 @@ I_grid              = collect(range(0, 1; length=1000))
 true_beta_over_time = beta_exp(location, true_inf)
 true_beta_01        = beta_exp(location, I_grid .* population)
 
-sim_dir = datadir("exp_pro", "sims", model_name, sim_name, "synthetic_$(location)")
-src_dir = plotsdir("sims", model_name, sim_name, "synthetic_$(location)")
+# Extract the sim with the current noise
+sim_dir = datadir("exp_pro", "sims", model_name, sim_name, "synthetic_$(location)", "noise=$(noise).jld2")
+src_dir = plotsdir("sims", model_name, sim_name, "synthetic_$(location)", "noise=$(noise).jld2")
 mkpath(src_dir)
 
 #========================================================

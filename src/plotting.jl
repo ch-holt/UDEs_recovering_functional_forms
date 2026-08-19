@@ -11,19 +11,19 @@ function plot_ensemble_summary(days, true_inf, I_grid, true_beta_over_time, true
         color=:black, linewidth=2, label="Data",
         xlabel="Day", ylabel="Infectious individuals",
         title="Infectious trajectory — ($(location))",
-        legend=:topright, left_margin=10Plots.mm)
+        legend=:outertopright, left_margin=10Plots.mm)
 
     beta_time_plot = plot(days[1:length(true_beta_over_time)], true_beta_over_time;
         color=:black, linewidth=2, label="True β",
         xlabel="Day", ylabel="β(t)",
         title="Beta over time — ($(location))",
-        legend=:topright)
+        legend=:outertopright)
 
     beta_01_plot = plot(I_grid, true_beta_01;
         color=:black, linewidth=2, label="True β",
         xlabel="I/N", ylabel="β(I/N)",
         title="Beta vs I/N — ($(location))",
-        legend=:topright)
+        legend=:outertopright)
     vline!(beta_01_plot, [I_N_min]; linestyle=:dot, color=:black, linewidth=2, label="Min I/N (observed)")
     vline!(beta_01_plot, [I_N_max]; linestyle=:dot, color=:gray40, linewidth=2, label="Max I/N (observed)")
 
@@ -82,3 +82,4 @@ function plot_ensemble_summary(days, true_inf, I_grid, true_beta_over_time, true
 
     return traj_plot, beta_time_plot, beta_01_plot
 end
+

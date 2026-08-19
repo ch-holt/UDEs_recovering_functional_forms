@@ -30,25 +30,21 @@ using UDE_FUNCTIONAL_FORMS
 MAIN FUNCTION TO TRAIN THE UDE AND SAVE THE RESULTS
 =========================================================# 
 
-function run_model(locations, beta_function, beta_network; maxiters_adam, maxiters_lbfgs, number_of_nn_inputs)
+function run_model(locations, beta_function, beta_network; maxiters_adam, maxiters_lbfgs, number_of_nn_inputs, noise)
     println("Starting run: on thread $(Threads.threadid())")
+    t_start = time()
 
     # Initialise parameters
     nn_params, st = Lux.setup(rng, beta_network)
     nn_params = ComponentArray(nn_params)
     nn_params = Float64.(nn_params)
 
-    trajectories = load_trajectories(locations, beta_function)
+    trajectories = load_trajectories(locations, beta_function, noise)
     p_trained, losses_final = train_ude_multiple_datasets(nn_params, predict_ude, trajectories, beta_network, st, number_of_nn_inputs; maxiters_adam, maxiters_lbfgs)
     
     # Save the trained parameters and losses for the combined trajectories
 
-    # Create numbered simulation folders to allow multiple runs of a single set of hyperparameters 
-    model_iteration = 1
-    while isdir(datadir("exp_pro","sims", model_name, sim_name, "simulation_v$(model_iteration)"))
-        model_iteration += 1
-    end
-    foldername = "simulation_v$model_iteration"
+    foldername = "simulation_seed=$(seed)"
 
     save(datadir("exp_pro","sims", model_name, sim_name, foldername, "training_results.jld2"), 
     "p_trained", p_trained, "losses_final", losses_final)
@@ -69,7 +65,7 @@ function run_model(locations, beta_function, beta_network; maxiters_adam, maxite
     for location in locations
         filename = "synthetic_$(location)"
         # Extract trajectory of infectious individuals
-        dataset = JLD2.load(datadir("exp_pro","synthetic_data", "synthetic_trajectories_beta_exp", filename*".jld2"))
+        dataset = JLD2.load(datadir("exp_pro","synthetic_data", "synthetic_trajectories_beta_exp", filename, "noise=$(noise).jld2"))
         data = dataset["infectious"]
         days = dataset["days"]
 
@@ -139,7 +135,7 @@ function run_model(locations, beta_function, beta_network; maxiters_adam, maxite
         # In this folder save the infectious trajectory results and the beta results for this trajectory
         JLD2.save(root,
             "p", p_trained, "losses", losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_traj,
-            "days", days)
+            "days", days, "elapsed_seconds", time() - t_start)
     
         #========================
         CREATE PLOTS
@@ -248,16 +244,18 @@ maxiters_adam = 10
 maxiters_lbfgs = 10
 number_of_nn_inputs = 4
 
+
 # Define strings for file names and directory for results
 model_name = "ude_multiple"
 locations = ["MA"]
-sim_name ="UDE_multiple_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_number_of_nn_input=$(number_of_nn_inputs)_locations=$(join(locations, "_"))_testing"
+noise = 0
+sim_name ="UDE_multiple_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_locations=$(join(locations, "_"))_traindata=$(train_length)_noise=$(noise)"
 if !isdir(datadir("exp_pro","sims", model_name, sim_name)) 
 	mkpath(datadir("exp_pro","sims", model_name, sim_name))
 end
 
 for i = 1:1
-    run_model(locations, beta_function, beta_network; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, number_of_nn_inputs=number_of_nn_inputs)
+    run_model(locations, beta_function, beta_network; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, number_of_nn_inputs=number_of_nn_inputs, noise=noise)
 end
 
 

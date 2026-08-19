@@ -82,6 +82,7 @@ DEFINE PARAMETERS
 
 sim_name = "UDE_single_beta=beta_exp_adam=2500_learning_rate=0.001_lbfgs=2000_number_of_nn_input=1_finalactivation=softplus_test=first160_val=200"
 location = "MA"
+noise = 0
 beta_function = beta_exp
 root = datadir("exp_pro","sims",  "ude_single", sim_name, "synthetic_$(location)")
 
@@ -92,7 +93,7 @@ multistart = true
 MS_limit = 0.3
 
 # Load the observed data
-data = JLD2.load(DrWatson.datadir("exp_pro","synthetic_data","synthetic_trajectories_beta_exp", "synthetic_$(location).jld2"))
+data = JLD2.load(DrWatson.datadir("exp_pro","synthetic_data","synthetic_trajectories_beta_exp", "synthetic_$(location)", "noise=$(noise).jld2"))
 
 # Just use infectious trajectory
 obs = data["infectious"]
@@ -145,7 +146,9 @@ for folder in seed_folders
     # Find UDE results for this seed
     I_nn, results = extract_ude(root, obs, folder)
 
-    mach, r, best_equation, simplified_equation, SR_input_1000, SR_input_0_1, SR_input_days, nn_input_days, nn_output_days, nn_input_1000, nn_output_1000, nn_input_0_1, nn_output_0_1, I_grid, range_0_1, I_nn, norm_i_traj = symbolic_regression(I_nn, results, output_dir, input_size) 
+    t_start_sr = time()
+    mach, r, best_equation, simplified_equation, SR_input_1000, SR_input_0_1, SR_input_days, nn_input_days, nn_output_days, nn_input_1000, nn_output_1000, nn_input_0_1, nn_output_0_1, I_grid, range_0_1, I_nn, norm_i_traj = symbolic_regression(I_nn, results, output_dir, input_size)
+    elapsed_sr = time() - t_start_sr 
 
     #=============================================================
     MAKE PLOTS
@@ -309,7 +312,8 @@ for folder in seed_folders
     savefig(panel, joinpath(output_dir, "$(sim_name)_panel.png"))
 
     # Save both report and machine to the same file and all trajectories
-    JLD2.save(joinpath(output_dir, "SR_report.jld2"), "report", r, "mach", mach, 
-        "SR_beta_days", SR_beta_days, "SR_beta_0_1", SR_beta_0_1, "SR_inf", i_sr)
+    JLD2.save(joinpath(output_dir, "SR_report.jld2"), "report", r, "mach", mach,
+        "SR_beta_days", SR_beta_days, "SR_beta_0_1", SR_beta_0_1, "SR_inf", i_sr,
+        "elapsed_seconds", elapsed_sr)
 
 end

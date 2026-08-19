@@ -24,18 +24,20 @@ function summarise_results(sim_name_dir::String)
 
             data = JLD2.load(results_file)
 
-            seed       = get(data, "seed",        missing)
-            loss_traj  = get(data, "loss_traj",   missing)
-            loss_beta  = get(data, "loss_beta",   missing)
-            loss_I_grid = get(data, "loss_I_grid", missing)
+            seed            = get(data, "seed",            missing)
+            loss_traj_noisy = get(data, "loss_traj_noisy", missing)
+            loss_traj_true  = get(data, "loss_traj_true",  missing)
+            loss_beta       = get(data, "loss_beta",       missing)
+            loss_I_grid     = get(data, "loss_I_grid",     missing)
 
             push!(rows, (
-                location    = location,
-                sim_folder  = basename(sim_folder),
-                seed        = seed,
-                nmse_traj   = loss_traj,
-                nmse_beta   = loss_beta,
-                nmse_I_grid = loss_I_grid,
+                location        = location,
+                sim_folder      = basename(sim_folder),
+                seed            = seed,
+                nmse_traj_noisy = loss_traj_noisy,
+                nmse_traj_true  = loss_traj_true,
+                nmse_beta       = loss_beta,
+                nmse_I_grid     = loss_I_grid,
             ))
         end
     end
@@ -47,7 +49,7 @@ function summarise_results(sim_name_dir::String)
     return df
 end
 
-sim_name_dir = datadir("exp_pro", "sims", "ude_single", "UDE_single_beta=beta_exp_adam=2500_learning_rate=0.001_lbfgs=2000_number_of_nn_input=1_finalactivation=softplus_test=first160_val=200", "synthesised_MA")
+sim_name_dir = datadir("exp_pro", "sims", "ude_single", "UDE_single_beta=beta_exp_adam=2500_learning_rate=0.001_lbfgs=2000_number_of_nn_input=1_finalactivation=softplus_test=first160_val=200", "synthetic_MA")
 df = summarise_results(sim_name_dir)
 out_path = joinpath(sim_name_dir, "results_summary.csv")
 CSV.write(out_path, df)
