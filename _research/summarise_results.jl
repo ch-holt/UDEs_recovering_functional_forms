@@ -47,7 +47,7 @@ function summarise_results(sim_name_dir::String)
     return df
 end
 
-sim_name_dir = datadir("exp_pro", "sims", "ude_single", "UDE_single_beta=beta_exp_adam=2500_learning_rate=0.001_lbfgs=2000_number_of_nn_input=1_finalactivation=softplus_test=first160_val=200", "synthesised_MA")
+sim_name_dir = datadir("exp_pro", "sims", "ude_single", "UDE_single_beta=beta_exp_adam=2500_learning_rate=0.001_lbfgs=2000_number_of_nn_input=1_finalactivation=softplus_test=first160_val=200", "synthetic_MA")
 df = summarise_results(sim_name_dir)
 out_path = joinpath(sim_name_dir, "results_summary.csv")
 CSV.write(out_path, df)

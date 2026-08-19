@@ -30,7 +30,7 @@ using UDE_FUNCTIONAL_FORMS
 MAIN FUNCTION TO TRAIN THE UDE AND SAVE THE RESULTS
 =========================================================# 
 
-function run_model(locations, beta_function, beta_network; maxiters_adam, maxiters_lbfgs, number_of_nn_inputs)
+function run_model(locations, beta_function, beta_network; maxiters_adam, maxiters_lbfgs, number_of_nn_inputs, noise)
     println("Starting run: on thread $(Threads.threadid())")
     t_start = time()
 
@@ -39,7 +39,7 @@ function run_model(locations, beta_function, beta_network; maxiters_adam, maxite
     nn_params = ComponentArray(nn_params)
     nn_params = Float64.(nn_params)
 
-    trajectories = load_trajectories(locations, beta_function)
+    trajectories = load_trajectories(locations, beta_function, noise)
     p_trained, losses_final = train_ude_multiple_datasets(nn_params, predict_ude, trajectories, beta_network, st, number_of_nn_inputs; maxiters_adam, maxiters_lbfgs)
     
     # Save the trained parameters and losses for the combined trajectories
@@ -65,7 +65,7 @@ function run_model(locations, beta_function, beta_network; maxiters_adam, maxite
     for location in locations
         filename = "synthetic_$(location)"
         # Extract trajectory of infectious individuals
-        dataset = JLD2.load(datadir("exp_pro","synthetic_data", "synthetic_trajectories_beta_exp", filename*".jld2"))
+        dataset = JLD2.load(datadir("exp_pro","synthetic_data", "synthetic_trajectories_beta_exp", filename, "noise=$(noise).jld2"))
         data = dataset["infectious"]
         days = dataset["days"]
 
@@ -244,16 +244,18 @@ maxiters_adam = 10
 maxiters_lbfgs = 10
 number_of_nn_inputs = 4
 
+
 # Define strings for file names and directory for results
 model_name = "ude_multiple"
 locations = ["MA"]
-sim_name ="UDE_multiple_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_number_of_nn_input=$(number_of_nn_inputs)_locations=$(join(locations, "_"))_testing"
+noise = 0
+sim_name ="UDE_multiple_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_locations=$(join(locations, "_"))_traindata=$(train_length)_noise=$(noise)"
 if !isdir(datadir("exp_pro","sims", model_name, sim_name)) 
 	mkpath(datadir("exp_pro","sims", model_name, sim_name))
 end
 
 for i = 1:1
-    run_model(locations, beta_function, beta_network; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, number_of_nn_inputs=number_of_nn_inputs)
+    run_model(locations, beta_function, beta_network; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, number_of_nn_inputs=number_of_nn_inputs, noise=noise)
 end
 
 

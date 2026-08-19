@@ -25,6 +25,7 @@ location       = "MA"
 model_name     = "ude_single"
 beta_func_name = "beta_exp"
 multistart     = true
+noise          = 0
 
 # Training lengths to overlay. Each entry specifies the training length to
 # include, the MS_limit (multistart validation-loss threshold) used to
@@ -61,7 +62,7 @@ beta_network, _, st_nn = build_neural_network(rng, hidden_dims, input_size, 1,
 population = POPULATION[location]
 
 dataset = JLD2.load(datadir("exp_pro", "synthetic_data", "synthetic_trajectories_$(beta_func_name)",
-                             "synthetic_$(location).jld2"))
+                             "synthetic_$(location)", "noise=$(noise).jld2"))
 true_inf = dataset["infectious"]
 days     = collect(dataset["days"])
 
@@ -88,7 +89,7 @@ for cfg in train_length_configs
     train_length = cfg.train_length
     MS_limit     = cfg.MS_limit
 
-    sim_name = "UDE_single_beta=$(beta_func_name)_adam=2500_lbfgs=2000_traindata=$(train_length)"
+    sim_name = "UDE_single_beta=$(beta_func_name)_adam=2500_lbfgs=2000_traindata=$(train_length)_noise=$(noise)"
     sim_dir  = datadir("exp_pro", "sims", model_name, sim_name, "synthetic_$(location)")
 
     if !isdir(sim_dir)

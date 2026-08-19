@@ -19,6 +19,7 @@ using OrdinaryDiffEq
 using UDE_FUNCTIONAL_FORMS
 
 multistart = true
+noise      = 0
 
 # Colours for 1–4 week forecast segments
 const FORECAST_COLORS = [:royalblue, :forestgreen, :darkorange, :purple]
@@ -34,7 +35,7 @@ for train_length in [50, 55, 60, 63, 65, 75, 100, 125, 150, 175, 200]
         for MS_limit in [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 
             model_name = "ude_single"
-            sim_name   = "UDE_single_beta=beta_exp_adam=2500_lbfgs=2000_traindata=$(train_length)"
+            sim_name   = "UDE_single_beta=beta_exp_adam=2500_lbfgs=2000_traindata=$(train_length)_noise=$(noise)"
 
             # Must match the architecture used in training
             hidden_dims         = 5
@@ -68,7 +69,7 @@ for train_length in [50, 55, 60, 63, 65, 75, 100, 125, 150, 175, 200]
             =========================================================#
 
             dataset  = JLD2.load(datadir("exp_pro", "synthetic_data", "synthetic_trajectories_beta_exp",
-                                         "synthetic_$(location).jld2"))
+                                         "synthetic_$(location)", "noise=$(noise).jld2"))
             true_inf = dataset["infectious"]
             days     = collect(dataset["days"])
 

@@ -28,7 +28,7 @@ using UDE_FUNCTIONAL_FORMS
 MAIN FUNCTION TO TRAIN THE UDE AND SAVE THE RESULTS
 =========================================================# 
 
-function run_model(beta_function, location, data, train_length, u0, seed, predict_ude, beta_network, prob_ude; maxiters_adam, maxiters_lbfgs, adam_learning_rate, number_of_nn_inputs=1, model_name, sim_name, days, delta, population)
+function run_model(sim_name, beta_function, location, data, true_data, train_length, u0, seed, predict_ude, beta_network, prob_ude, noise, r; maxiters_adam, maxiters_lbfgs, adam_learning_rate, number_of_nn_inputs=1, model_name, days, delta, population)
     println("Starting run: on thread $(Threads.threadid())")
     t_start = time()
     rng = Random.seed!(seed)
@@ -50,7 +50,7 @@ function run_model(beta_function, location, data, train_length, u0, seed, predic
 
     training_data = data[1:train_length]
 
-    p_trained, train_losses_final, val_losses_final = train_ude_single_dataset(p_init, predict_ude, training_data, u0, beta_function, location; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, adam_learning_rate=adam_learning_rate)
+    p_trained, train_losses_final, val_losses_final = train_ude_single_dataset(p_init, predict_ude, training_data, u0, beta_function, location, noise, r; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, adam_learning_rate=adam_learning_rate)
 
     loc_foldername = "synthetic_$(location)"
 
@@ -99,20 +99,24 @@ function run_model(beta_function, location, data, train_length, u0, seed, predic
     end
 
     # Create trajectory plot
-    loss_traj = loss_nmse(x_hat, data)
+    # loss_traj_noisy: fit to the (possibly noisy) data the model actually trained on - diagnostic only
+    # loss_traj_true: recovery of the noise-free trajectory - the headline metric for "did we recover the truth"
+    loss_traj_noisy = loss_nmse(x_hat, data)
+    loss_traj_true = loss_nmse(x_hat, true_data)
 
-    traj_plot = plot(days[1:length(data)], data[1:length(data)], color=:black, markersize=2, label="Data", 
+    traj_plot = plot(days[1:length(data)], data[1:length(data)], color=:black, markersize=2, label="Noisy data",
     xlabel="Day", ylabel="Infectious individuals", title="Infectious trajectory for $(location)", legend=:topright)
+    plot!(traj_plot, days[1:length(true_data)], true_data, color=:gray, linestyle=:dash, linewidth=2, label="True trajectory")
     plot!(traj_plot, days[1:length(data)], x_hat, color=:red, linewidth=2, label="Predicted trajectory")
-    annotate!(traj_plot, days[round(Int, length(data)/2)], maximum(data), text("NMSE: $(round(loss_traj, sigdigits=3))", :black))
+    annotate!(traj_plot, days[round(Int, length(data)/2)], maximum(data), text("NMSE (vs truth): $(round(loss_traj_true, sigdigits=3))", :black))
 
     # Save the plot
     savefig(traj_plot, joinpath(plot_dir, "traj_plot.png"))
 
     # Create beta plot
 
-    # Define beta function
-    true_beta = beta_function(location, data)
+    # Define beta function - always computed from the noise-free trajectory, never the noisy training data
+    true_beta = beta_function(location, true_data)
     true_beta_against_xhat = beta_function(location, I_grid*p_init.population)
 
     loss_beta = loss_nmse(beta_traj, true_beta)
@@ -132,8 +136,8 @@ function run_model(beta_function, location, data, train_length, u0, seed, predic
     
     loss_I_grid = loss_nmse(y_hat, true_beta_against_xhat)
 
-    # Identify I/N positions in observed training data where beta is minimum and maximum
-    observed_I_over_N = data ./ p_init.population
+    # Identify I/N positions in the true trajectory where beta is minimum and maximum
+    observed_I_over_N = true_data ./ p_init.population
     idx_beta_min = argmin(true_beta)
     idx_beta_max = argmax(true_beta)
     x_at_beta_min = observed_I_over_N[idx_beta_min]
@@ -154,7 +158,7 @@ function run_model(beta_function, location, data, train_length, u0, seed, predic
     mkpath(datadir("exp_pro","sims", model_name, sim_name, loc_foldername, foldername))
 	JLD2.save(datadir("exp_pro","sims", model_name, sim_name, loc_foldername, foldername, "results.jld2"),
 		"p", p_trained, "train_losses", train_losses_final, "val_losses", val_losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_traj,
-		"days", days, "seed", seed, "loss_traj", loss_traj, "loss_beta", loss_beta, "loss_I_grid", loss_I_grid,
+		"days", days, "seed", seed, "noise", noise, "loss_traj_noisy", loss_traj_noisy, "loss_traj_true", loss_traj_true, "loss_beta", loss_beta, "loss_I_grid", loss_I_grid,
         "elapsed_seconds", elapsed)
 
 	println("Finished run: $(location) on thread $(Threads.threadid())")
@@ -202,8 +206,11 @@ beta_function = beta_exp
 maxiters_adam = 2500
 maxiters_lbfgs = 2000
 
+noise = 0
+r = noise == 0 ? Inf : 1 / noise^2
+
 model_name = "ude_single"
-sim_name = "UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_traindata=$(train_length)"
+sim_name = "UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_traindata=$(train_length)_noise=$(noise)"
 
 if !isdir(datadir("exp_pro","sims", model_name, sim_name))
     mkpath(datadir("exp_pro","sims", model_name, sim_name))
@@ -217,9 +224,11 @@ for location in ["WY"]
     LOAD DATA
     =========================================================#
 
-    dataset = JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_beta_exp", "synthetic_$(location).jld2"))
+    dataset = JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_beta_exp", "synthetic_$(location)", "noise=$(noise).jld2"))
+    true_dataset = noise == 0 ? dataset : JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_beta_exp", "synthetic_$(location)", "noise=0.jld2"))
 
     local data = dataset["infectious"]
+    local true_data = true_dataset["infectious"]
     local days = dataset["days"]
 
     local population = POPULATION[location]
@@ -248,10 +257,10 @@ for location in ["WY"]
             local prob_ude = ODEProblem(seird_nn!, u0, tspan, p_nn_temp)
             local predict_ude = make_predict_ude(prob_ude, train_length)
 
-            run_model(beta_function, location, data, train_length, u0, i, predict_ude, beta_network, prob_ude;
+            run_model(sim_name, beta_function, location, data, true_data, train_length, u0, i, predict_ude, beta_network, prob_ude, noise, r;
                 maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs,
                 number_of_nn_inputs=number_of_nn_inputs, adam_learning_rate=adam_learning_rate,
-                model_name=model_name, sim_name=sim_name, days=days, delta=delta, population=population)
+                model_name=model_name, days=days, delta=delta, population=population)
         catch e
             println("Error occurred for seed $(i): $e")
         end

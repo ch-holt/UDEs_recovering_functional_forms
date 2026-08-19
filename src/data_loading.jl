@@ -2,12 +2,12 @@
 FUNCTION TO LOAD TRAJECTORIES BASED ON LOCATION AND BETA FUNCTION
 ==============================================================# 
 
-function load_trajectories(locations, beta_function)
+function load_trajectories(locations, beta_function, noise)
     root = datadir("exp_pro","synthetic_data","synthetic_trajectories_$(beta_function)")
     trajectories = []
     for location in locations
-        filename = "synthetic_$(location).jld2"
-        dataset = JLD2.load(joinpath(root, filename))
+        filename = "synthetic_$(location)"
+        dataset = JLD2.load(joinpath(root, filename, "noise=$(noise).jld2"))
         varying_p = ComponentArray(
             population = dataset["varying_p"]["population"],
             prevalence = dataset["varying_p"]["prevalence"],
