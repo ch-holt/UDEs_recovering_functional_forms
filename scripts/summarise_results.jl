@@ -24,18 +24,20 @@ function summarise_results(sim_name_dir::String)
 
             data = JLD2.load(results_file)
 
-            seed       = get(data, "seed",        missing)
-            loss_traj  = get(data, "loss_traj",   missing)
-            loss_beta  = get(data, "loss_beta",   missing)
-            loss_I_grid = get(data, "loss_I_grid", missing)
+            seed            = get(data, "seed",            missing)
+            loss_traj_noisy = get(data, "loss_traj_noisy", missing)
+            loss_traj_true  = get(data, "loss_traj_true",  missing)
+            loss_beta       = get(data, "loss_beta",       missing)
+            loss_I_grid     = get(data, "loss_I_grid",     missing)
 
             push!(rows, (
-                location    = location,
-                sim_folder  = basename(sim_folder),
-                seed        = seed,
-                nmse_traj   = loss_traj,
-                nmse_beta   = loss_beta,
-                nmse_I_grid = loss_I_grid,
+                location        = location,
+                sim_folder      = basename(sim_folder),
+                seed            = seed,
+                nmse_traj_noisy = loss_traj_noisy,
+                nmse_traj_true  = loss_traj_true,
+                nmse_beta       = loss_beta,
+                nmse_I_grid     = loss_I_grid,
             ))
         end
     end

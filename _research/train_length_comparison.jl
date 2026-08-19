@@ -25,7 +25,7 @@ location       = "MA"
 model_name     = "ude_single"
 beta_func_name = "beta_exp"
 multistart     = true
-noise          = 0
+noise          = 0.0
 
 # Training lengths to overlay. Each entry specifies the training length to
 # include, the MS_limit (multistart validation-loss threshold) used to

@@ -16,9 +16,9 @@ end
 function loss_negbin(pred, data, r)
     # ensure prediction is positive
     pred = max.(pred, eps())
-    # NLL for negative binomial distribution
-    log_likelihood = sum((data .+ r) .* log.(r .+ max.(pred, eps())) .- data .* log.(pred))
-    return -log_likelihood  # Return negative log-likelihood as loss
+    # This sum is already the NLL (dropping the pred-independent combinatorial/r terms) - do not negate it again
+    nll = sum((data .+ r) .* log.(r .+ pred) .- data .* log.(pred))
+    return nll
 end
 
 #=============================================================

@@ -153,13 +153,32 @@ function run_model(sim_name, beta_function, location, data, true_data, train_len
     # Save the plot
     savefig(beta_against_xhat_plot, joinpath(plot_dir, "beta_against_xhat_plot.png"))
 
+    # Create beta vs I/N plot restricted to the training region
+    # x-axis is the actual I/N values visited during training (not a uniform grid)
+    train_I = x_hat[1:train_length]
+    train_I_over_N = train_I ./ p_init.population
+    train_I_grid_input = Float64.(reshape(train_I_over_N, 1, train_length))
+
+    y_hat_train = vec(beta_network(train_I_grid_input, p_trained.nn_params, st)[1])
+    true_beta_train = beta_function(location, train_I)
+
+    loss_I_train = loss_nmse(y_hat_train, true_beta_train)
+
+    beta_against_train_plot = plot(train_I_over_N, true_beta_train, color=:blue, linewidth=2, label="True beta",
+        xlabel="I/N", ylabel="Beta", title="Beta vs I/N (training region, $(location))", legend=:outertopright)
+    plot!(beta_against_train_plot, train_I_over_N, y_hat_train, color=:red, linewidth=2, label="Predicted beta")
+    annotate!(beta_against_train_plot, train_I_over_N[round(Int, train_length/2)], maximum(true_beta_train),
+        text("NMSE: $(round(loss_I_train, sigdigits=3))", :black))
+
+    savefig(beta_against_train_plot, joinpath(plot_dir, "beta_against_xhat_train_plot.png"))
+
     elapsed = time() - t_start
 
     mkpath(datadir("exp_pro","sims", model_name, sim_name, loc_foldername, foldername))
 	JLD2.save(datadir("exp_pro","sims", model_name, sim_name, loc_foldername, foldername, "results.jld2"),
 		"p", p_trained, "train_losses", train_losses_final, "val_losses", val_losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_traj,
 		"days", days, "seed", seed, "noise", noise, "loss_traj_noisy", loss_traj_noisy, "loss_traj_true", loss_traj_true, "loss_beta", loss_beta, "loss_I_grid", loss_I_grid,
-        "elapsed_seconds", elapsed)
+        "loss_I_train", loss_I_train, "elapsed_seconds", elapsed)
 
 	println("Finished run: $(location) on thread $(Threads.threadid())")
 
@@ -202,11 +221,12 @@ final_activation_function = softplus
 number_of_nn_inputs = 1
 adam_learning_rate = 1e-3
 
-beta_function = beta_exp
+beta_function = beta_rational
+
 maxiters_adam = 2500
 maxiters_lbfgs = 2000
 
-noise = 0
+noise = 0.1
 r = noise == 0 ? Inf : 1 / noise^2
 
 model_name = "ude_single"
@@ -225,7 +245,7 @@ for location in ["WY"]
     =========================================================#
 
     dataset = JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_beta_exp", "synthetic_$(location)", "noise=$(noise).jld2"))
-    true_dataset = noise == 0 ? dataset : JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_beta_exp", "synthetic_$(location)", "noise=0.jld2"))
+    true_dataset = noise == 0 ? dataset : JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_beta_exp", "synthetic_$(location)", "noise=0.0.jld2"))
 
     local data = dataset["infectious"]
     local true_data = true_dataset["infectious"]

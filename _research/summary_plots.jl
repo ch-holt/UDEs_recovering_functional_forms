@@ -11,6 +11,7 @@ using DrWatson
 
 using JLD2
 using Plots
+using Statistics
 using Lux
 using ComponentArrays
 using Random
@@ -19,7 +20,7 @@ using OrdinaryDiffEq
 using UDE_FUNCTIONAL_FORMS
 
 multistart = true
-noise      = 0
+noise      = 0.0
 
 # Colours for 1–4 week forecast segments
 const FORECAST_COLORS = [:royalblue, :forestgreen, :darkorange, :purple]
@@ -29,8 +30,8 @@ const FORECAST_LABELS = ["Week 1", "Week 2", "Week 3", "Week 4"]
 CONFIGURATION
 =========================================================#
 
-for train_length in [50, 55, 60, 63, 65, 75, 100, 125, 150, 175, 200]
-    for location in ["MA"]
+for train_length in [365]
+    for location in ["AR"]
         println("Processing location: $(location), train_length: $(train_length)")
         for MS_limit in [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 
@@ -81,9 +82,17 @@ for train_length in [50, 55, 60, 63, 65, 75, 100, 125, 150, 175, 200]
             I_N_min = minimum(observed_I_over_N)
             I_N_max = maximum(observed_I_over_N)
 
-            inf_rows       = Vector{Vector{Float64}}()
-            beta_time_rows = Vector{Vector{Float64}}()
-            beta_01_rows   = Vector{Vector{Float64}}()
+            # Fine I/N grid spanning only the training region
+            train_I_over_N    = true_inf[1:train_length] ./ population
+            I_N_train_min     = minimum(train_I_over_N)
+            I_N_train_max     = maximum(train_I_over_N)
+            I_grid_train      = collect(range(I_N_train_min, I_N_train_max; length=500))
+            true_beta_train_region = beta_exp(location, I_grid_train .* population)
+
+            inf_rows        = Vector{Vector{Float64}}()
+            beta_time_rows  = Vector{Vector{Float64}}()
+            beta_train_rows = Vector{Vector{Float64}}()
+            beta_01_rows    = Vector{Vector{Float64}}()
 
             #========================================================
             RETRIEVE UDE RESULTS
@@ -101,13 +110,16 @@ for train_length in [50, 55, 60, 63, 65, 75, 100, 125, 150, 175, 200]
                 beta_traj = d["beta_prediction"]
                 p_trained = d["p"]
 
-                i_traj   = vec(pred[3, 1:length(true_inf)])
-                nn_input = Float64.(reshape(I_grid, 1, length(I_grid)))
-                beta_0_1 = vec(beta_network(nn_input, p_trained.nn_params, st_nn)[1])
+                i_traj        = vec(pred[3, 1:length(true_inf)])
+                nn_input_01   = Float64.(reshape(I_grid,       1, length(I_grid)))
+                nn_input_tr   = Float64.(reshape(I_grid_train, 1, length(I_grid_train)))
+                beta_0_1      = vec(beta_network(nn_input_01, p_trained.nn_params, st_nn)[1])
+                beta_train_r  = vec(beta_network(nn_input_tr, p_trained.nn_params, st_nn)[1])
 
-                push!(inf_rows,       i_traj)
-                push!(beta_time_rows, beta_traj)
-                push!(beta_01_rows,   beta_0_1)
+                push!(inf_rows,        i_traj)
+                push!(beta_time_rows,  beta_traj)
+                push!(beta_train_rows, beta_train_r)
+                push!(beta_01_rows,    beta_0_1)
             end
 
             isempty(inf_rows) && continue
@@ -127,37 +139,35 @@ for train_length in [50, 55, 60, 63, 65, 75, 100, 125, 150, 175, 200]
 
             train_days      = days[1:train_length]
             train_true_inf  = true_inf[1:train_length]
-            train_true_beta = true_beta_over_time[1:train_length]
 
             traj_train = plot(train_days, train_true_inf;
                 color=:black, linewidth=2, label="Data",
                 legend=:outertopright, left_margin=10Plots.mm, bottom_margin=8Plots.mm)
-            beta_time_train = plot(train_days, train_true_beta;
+            beta_train_plot = plot(I_grid_train, true_beta_train_region;
                 color=:black, linewidth=2, label="True β",
                 legend=:outertopright, left_margin=10Plots.mm, bottom_margin=8Plots.mm)
 
             for i_traj in inf_rows
-                plot!(traj_train,      train_days, i_traj[1:train_length];      color=:red, alpha=0.3, linewidth=1, label="")
+                plot!(traj_train, train_days, i_traj[1:train_length]; color=:red, alpha=0.3, linewidth=1, label="")
             end
-            for beta_traj in beta_time_rows
-                plot!(beta_time_train, train_days, beta_traj[1:train_length];   color=:red, alpha=0.3, linewidth=1, label="")
+            for beta_r in beta_train_rows
+                plot!(beta_train_plot, I_grid_train, beta_r; color=:red, alpha=0.3, linewidth=1, label="")
             end
 
-            # CRPS on training window
-            inf_mat_train  = stack([r[1:train_length] for r in inf_rows];       dims=1)
-            beta_mat_train = stack([r[1:train_length] for r in beta_time_rows]; dims=1)
+            # CRPS on training window (infectious)
+            inf_mat_train  = stack([r[1:train_length] for r in inf_rows]; dims=1)
+            inf_fc_train   = add_truth(Forecast(horizon=collect(1:train_length), trajectories=inf_mat_train), train_true_inf)
+            inf_crps_train = score(inf_fc_train, CRPS_trajectory())
 
-            inf_fc_train  = add_truth(Forecast(horizon=collect(1:train_length), trajectories=inf_mat_train),  train_true_inf)
-            beta_fc_train = add_truth(Forecast(horizon=collect(1:train_length), trajectories=beta_mat_train), train_true_beta)
-            inf_crps_train  = score(inf_fc_train,  CRPS_trajectory())
-            beta_crps_train = score(beta_fc_train, CRPS_trajectory())
+            # Mean NMSE across seeds for beta vs I/N (training region)
+            beta_nmse_train = mean(loss_nmse(beta_r, true_beta_train_region) for beta_r in beta_train_rows)
 
-            title!(traj_train,      "Infectious (training) — $(location)\nCRPS: $(round(inf_crps_train,  sigdigits=3))")
-            xlabel!(traj_train,     "Day")
-            ylabel!(traj_train,     "Infectious individuals")
-            title!(beta_time_train, "Beta over time (training) — $(location)\nCRPS: $(round(beta_crps_train, sigdigits=3))")
-            xlabel!(beta_time_train, "Day")
-            ylabel!(beta_time_train, "β(t)")
+            title!(traj_train,     "Infectious (training) — $(location)\nCRPS: $(round(inf_crps_train,  sigdigits=3))")
+            xlabel!(traj_train,    "Day")
+            ylabel!(traj_train,    "Infectious individuals")
+            title!(beta_train_plot, "β vs I/N (training region) — $(location)\nMean NMSE: $(round(beta_nmse_train, sigdigits=3))")
+            xlabel!(beta_train_plot, "I/N")
+            ylabel!(beta_train_plot, "β")
 
             #========================================================
             PLOT 3 — FORECAST (training + 4 coloured weeks)
@@ -166,7 +176,7 @@ for train_length in [50, 55, 60, 63, 65, 75, 100, 125, 150, 175, 200]
             max_day   = min(train_length + 28, length(true_inf))
             plot_days = days[1:max_day]
 
-            traj_forecast     = plot(plot_days, true_inf[1:max_day];
+            traj_forecast      = plot(plot_days, true_inf[1:max_day];
                 color=:black, linewidth=2, label="Data",
                 legend=:outertopright, left_margin=10Plots.mm, bottom_margin=8Plots.mm,
                 titlefontsize=9)
@@ -209,9 +219,9 @@ for train_length in [50, 55, 60, 63, 65, 75, 100, 125, 150, 175, 200]
                 w_start > length(true_inf) && break
                 n_i = w_end_i - w_start + 1
                 n_b = w_end_b - w_start + 1
-                inf_mat_w  = stack([r[w_start:w_end_i] for r in inf_rows];       dims=1)
+                inf_mat_w  = stack([r[w_start:w_end_i] for r in inf_rows];      dims=1)
                 beta_mat_w = stack([r[w_start:w_end_b] for r in beta_time_rows]; dims=1)
-                push!(inf_crps_weeks,  score(add_truth(Forecast(horizon=collect(1:n_i), trajectories=inf_mat_w),  true_inf[w_start:w_end_i]),  CRPS_trajectory()))
+                push!(inf_crps_weeks,  score(add_truth(Forecast(horizon=collect(1:n_i), trajectories=inf_mat_w),  true_inf[w_start:w_end_i]),              CRPS_trajectory()))
                 push!(beta_crps_weeks, score(add_truth(Forecast(horizon=collect(1:n_b), trajectories=beta_mat_w), true_beta_over_time[w_start:w_end_b]), CRPS_trajectory()))
             end
 
@@ -240,7 +250,7 @@ for train_length in [50, 55, 60, 63, 65, 75, 100, 125, 150, 175, 200]
             savefig(beta_01_plot,   joinpath(save_dir, "beta_01$(sfx).png"))
             # Training only
             savefig(traj_train,      joinpath(save_dir, "traj_train$(sfx).png"))
-            savefig(beta_time_train, joinpath(save_dir, "beta_time_train$(sfx).png"))
+            savefig(beta_train_plot, joinpath(save_dir, "beta_time_train$(sfx).png"))
             # Forecast
             savefig(traj_forecast,      joinpath(save_dir, "traj_forecast$(sfx).png"))
             savefig(beta_time_forecast, joinpath(save_dir, "beta_time_forecast$(sfx).png"))
