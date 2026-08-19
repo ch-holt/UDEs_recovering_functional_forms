@@ -199,8 +199,8 @@ number_of_nn_inputs = 1
 adam_learning_rate = 1e-3
 
 beta_function = beta_exp
-maxiters_adam = 2
-maxiters_lbfgs = 2
+maxiters_adam = 2500
+maxiters_lbfgs = 2000
 
 model_name = "ude_single"
 sim_name = "UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_traindata=$(train_length)"
@@ -210,7 +210,7 @@ if !isdir(datadir("exp_pro","sims", model_name, sim_name))
 end
 
 # do 100 initialisations
-for location in keys(POPULATION)
+for location in ["WY"]
     println("Running simulation for location: $(location)")
 
     #========================================================
@@ -236,7 +236,7 @@ for location in keys(POPULATION)
     # Define initial state
     local u0 = [S0, E0, I0, R0_recovered, D0]
 
-    for i = 1:1
+    for i = 1:100
         # Catch any errors during the run so that the following seeds still run
         try
             local rng = Random.seed!(i)
