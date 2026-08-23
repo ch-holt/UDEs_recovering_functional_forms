@@ -244,8 +244,8 @@ for location in ["WY"]
     LOAD DATA
     =========================================================#
 
-    dataset = JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_beta_exp", "synthetic_$(location)", "noise=$(noise).jld2"))
-    true_dataset = noise == 0 ? dataset : JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_beta_exp", "synthetic_$(location)", "noise=0.0.jld2"))
+    dataset = JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_$(beta_function)", "synthetic_$(location)", "noise=$(noise).jld2"))
+    true_dataset = noise == 0 ? dataset : JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_$(beta_function)", "synthetic_$(location)", "noise=0.0.jld2"))
 
     local data = dataset["infectious"]
     local true_data = true_dataset["infectious"]
