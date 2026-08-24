@@ -28,16 +28,34 @@ const FORECAST_LABELS = ["Week 1", "Week 2", "Week 3", "Week 4"]
 #========================================================
 CONFIGURATION
 =========================================================#
-beta_function = beta_exp
+# Discover every sim folder that actually exists on disk (same rationale as
+# scripts/multistart.jl) instead of hardcoding beta/train_length/noise/location.
+const BETA_FUNCTIONS = Dict("beta_exp" => beta_exp, "beta_rational" => beta_rational, "beta_mixed" => beta_mixed)
+const SIM_NAME_RE = r"^UDE_single_beta=(?<beta>[a-zA-Z_]+)_adam=(?<adam>\d+)_lbfgs=(?<lbfgs>\d+)_traindata=(?<traindata>\d+)_noise=(?<noise>[\d.]+)$"
 
-for train_length in [7,14,21,28,35,42,49,56,60, 63, 70, 77, 84, 91, 100, 125, 150,175, 200, 365]
-    for location in ["MA"]
-        for noise in [0.0]
-            println("Processing location: $(location), train_length: $(train_length)")
+sims_root = datadir("exp_pro", "sims", "ude_single")
+
+for sim in sort(readdir(sims_root))
+    m = match(SIM_NAME_RE, sim)
+    isnothing(m) && continue
+    !haskey(BETA_FUNCTIONS, m[:beta]) && continue
+
+    beta_function = BETA_FUNCTIONS[m[:beta]]
+    train_length  = parse(Int, m[:traindata])
+    noise         = parse(Float64, m[:noise])
+    sim_root_dir  = joinpath(sims_root, sim)
+
+    for loc_folder in sort(readdir(sim_root_dir))
+        !isdir(joinpath(sim_root_dir, loc_folder)) && continue
+        !startswith(loc_folder, "synthetic_") && continue
+        location = replace(loc_folder, "synthetic_" => "")
+        !haskey(POPULATION, location) && continue
+
+        println("Processing beta: $(m[:beta]), location: $(location), train_length: $(train_length), noise: $(noise)")
             for MS_limit in [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 
                 model_name = "ude_single"
-                sim_name   = "UDE_single_beta=$(beta_function)_adam=2500_lbfgs=2000_traindata=$(train_length)_noise=$(noise)"
+                sim_name   = sim
 
                 # Must match the architecture used in training
                 hidden_dims         = 5
@@ -58,7 +76,13 @@ for train_length in [7,14,21,28,35,42,49,56,60, 63, 70, 77, 84, 91, 100, 125, 15
                 FIND ALL SEED SIMULATION FOLDERS
                 =========================================================#
 
-                sim_dir      = datadir("exp_pro", "sims", model_name, sim_name, "synthetic_$(location)")
+                sim_dir = joinpath(sim_root_dir, loc_folder)
+
+                seeds_to_keep_path = joinpath(sim_dir, "seeds_to_keep_MS=$(MS_limit).jld2")
+                if !isfile(seeds_to_keep_path)
+                    println("No seeds_to_keep file for MS=$(MS_limit) in $(sim_dir) (run multistart.jl first), skipping.")
+                    continue
+                end
                 seed_folders = get_seed_folders(sim_dir, multistart, MS_limit)
 
                 if isempty(seed_folders)
@@ -70,10 +94,16 @@ for train_length in [7,14,21,28,35,42,49,56,60, 63, 70, 77, 84, 91, 100, 125, 15
                 LOAD SYNTHETIC DATA AND COMPUTE TRUE BETA
                 =========================================================#
 
-                dataset      = JLD2.load(datadir("exp_pro", "synthetic_data", "synthetic_trajectories_$(beta_function)",
-                                             "synthetic_$(location)", "noise=$(noise).jld2"))
-                true_dataset = noise == 0 ? dataset : JLD2.load(datadir("exp_pro", "synthetic_data", "synthetic_trajectories_$(beta_function)",
-                                             "synthetic_$(location)", "noise=0.0.jld2"))
+                dataset_path      = datadir("exp_pro", "synthetic_data", "synthetic_trajectories_$(beta_function)",
+                                             "synthetic_$(location)", "noise=$(noise).jld2")
+                true_dataset_path = noise == 0 ? dataset_path : datadir("exp_pro", "synthetic_data", "synthetic_trajectories_$(beta_function)",
+                                             "synthetic_$(location)", "noise=0.0.jld2")
+                if !isfile(dataset_path) || !isfile(true_dataset_path)
+                    println("Missing synthetic data for $(sim_name)/$(location), skipping.")
+                    continue
+                end
+                dataset      = JLD2.load(dataset_path)
+                true_dataset = JLD2.load(true_dataset_path)
                 true_inf  = true_dataset["infectious"]
                 noisy_inf = dataset["infectious"]
                 days      = collect(dataset["days"])
@@ -280,60 +310,20 @@ for train_length in [7,14,21,28,35,42,49,56,60, 63, 70, 77, 84, 91, 100, 125, 15
                 savefig(beta_time_forecast, joinpath(save_dir, "beta_time_forecast$(sfx).png"))
 
                 println("Done — plots saved to: $(save_dir)")
+
+                #========================================================
+                BEST UDE (SR retrieval skipped — no SR_report.jld2 outputs
+                exist locally yet; re-add that block once the SR pipeline
+                has been run for these sims)
+                =========================================================#
+
+                try
+                    I_nn, best_results, best_folder = extract_best_ude(sim_dir, true_inf, multistart, MS_limit)
+                    println("Best UDE results found in folder: $(best_folder)")
+                catch e
+                    println("Could not determine best UDE for $(sim_name)/$(location) MS=$(MS_limit): $(e)")
+                end
             end
         end
     end
 end
-
-
-#========================================================
-RETRIEVE SR RESULTS
-=========================================================#
-
-SR_inf_rows = Vector{Vector{Float64}}()
-SR_beta_time_rows = Vector{Vector{Float64}}()
-SR_beta_01_rows = Vector{Vector{Float64}}()
-
-output_dir = joinpath(@__DIR__, "..", "scripts", "outputs", "$(sim_name)", "synthetic_$(location)")
-
-for folder in seed_folders
-    result_path = joinpath(output_dir, folder, "SR_report.jld2")
-    if !isfile(result_path)
-        println("Skipping $(folder) — SR_report.jld2 not found")
-        continue
-    end
-
-    SR_beta_days, SR_beta_0_1, SR_inf = JLD2.load(result_path, "SR_beta_days", "SR_beta_0_1", "SR_inf")
-
-    # Store trajectories for CRPS
-    push!(SR_inf_rows, SR_inf)
-    push!(SR_beta_time_rows, vec(SR_beta_days))
-    push!(SR_beta_01_rows, vec(SR_beta_0_1))
-end
-
-SR_traj_plot, SR_beta_time_plot, SR_beta_01_plot = plot_ensemble_summary(days, true_inf, I_grid, true_beta_over_time, true_beta_01,
-                                                                I_N_min, I_N_max, location,
-                                                                SR_inf_rows, SR_beta_time_rows, SR_beta_01_rows)
-
-
-#========================================================
-SAVE
-=========================================================#
-
-panel = plot(SR_traj_plot, SR_beta_time_plot, SR_beta_01_plot; layout=(1, 3), size=(1800, 500))
-if multistart
-    savefig(panel, joinpath(output_dir, "panel_overlay_MS=$(MS_limit).png"))
-    savefig(SR_traj_plot,      joinpath(output_dir, "traj_overlay_MS=$(MS_limit).png"))
-    savefig(SR_beta_time_plot, joinpath(output_dir, "beta_time_overlay_MS=$(MS_limit).png"))
-    savefig(SR_beta_01_plot,   joinpath(output_dir, "beta_01_overlay_MS=$(MS_limit).png"))
-else
-    savefig(panel, joinpath(output_dir, "panel_overlay.png"))
-    savefig(SR_traj_plot,      joinpath(output_dir, "traj_overlay.png"))
-    savefig(SR_beta_time_plot, joinpath(output_dir, "beta_time_overlay.png"))
-    savefig(SR_beta_01_plot,   joinpath(output_dir, "beta_01_overlay.png"))
-end
-
-println("Done — plots saved to:\n  $(output_dir)")
-
-I_nn, best_results, folder = extract_best_ude(sim_dir, true_inf, multistart, MS_limit)
-println("Best UDE results found in folder: $(folder)")

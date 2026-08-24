@@ -65,53 +65,72 @@ function summarise_results(sim_name_dir::String, population::Real)
 end
 
 
-beta_function = beta_exp
+# Discover every sim folder that actually exists on disk, rather than hardcoding
+# beta/train_length/noise/location combinations — the real sweep matrix is irregular
+# (e.g. the train_length sweep only ran for MA, the noise sweep only at train_length=365),
+# so directory discovery is the only thing that stays correct as new sims land.
+const BETA_FUNCTIONS = Dict("beta_exp" => beta_exp, "beta_rational" => beta_rational, "beta_mixed" => beta_mixed)
+const SIM_NAME_RE = r"^UDE_single_beta=(?<beta>[a-zA-Z_]+)_adam=(?<adam>\d+)_lbfgs=(?<lbfgs>\d+)_traindata=(?<traindata>\d+)_noise=(?<noise>[\d.]+)$"
 
-const MAIN_SWEEP_LOCATIONS = ["AK","AL","AR","AZ","CA","CO","CT","DC","DE","FL","GA","HI","IA","ID","IL","IN","KS","KY",
-    "LA","MA","MD","ME","MI","MN","MO","MS","MT","NC","ND","NE","NH","NJ","NM","NV","NY","OH","OK","OR","PA","RI","SD",
-    "TN","UT","VA","VT","WI","WV","WY"]  # 48 locations with completed beta_exp UDE runs (excludes SC, TX, WA)
+sims_root = datadir("exp_pro", "sims", "ude_single")
 
-for train_length in [7,14,21,28,35,42,49,56,60, 63, 70, 77, 84, 91, 100, 125, 150,175, 200, 365]
-    # train_length=365 is the main sweep (all locations); other train_lengths are the
-    # MA-only train_length-limitation sweep, since that's the only location they were run for.
-    locations = train_length == 365 ? MAIN_SWEEP_LOCATIONS : ["MA"]
-    for location in locations
-        for noise in [0.0]
-            println("Processing location: $(location), train_length: $(train_length), noise: $(noise)")
+for sim in sort(readdir(sims_root))
+    m = match(SIM_NAME_RE, sim)
+    isnothing(m) && continue
+    !haskey(BETA_FUNCTIONS, m[:beta]) && continue
 
-            model_name   = "ude_single"
-            sim          = "UDE_single_beta=$(beta_function)_adam=2500_lbfgs=2000_traindata=$(train_length)_noise=$(noise)"
-            sim_name_dir = datadir("exp_pro", "sims", "ude_single", sim, "synthetic_$(location)")
-            population   = POPULATION[location]
+    beta_function = m[:beta]
+    train_length  = parse(Int, m[:traindata])
+    noise         = parse(Float64, m[:noise])
+    sim_root_dir  = joinpath(sims_root, sim)
 
-            # Extract and save summary once per noise level
-            df       = summarise_results(sim_name_dir, population)
-            out_path = joinpath(sim_name_dir, "results_summary.csv")
-            CSV.write(out_path, df)
-            println("Saved summary to: $out_path")
+    for loc_folder in sort(readdir(sim_root_dir))
+        !isdir(joinpath(sim_root_dir, loc_folder)) && continue
+        !startswith(loc_folder, "synthetic_") && continue
+        location = replace(loc_folder, "synthetic_" => "")
+        !haskey(POPULATION, location) && continue
 
-            # First check forecasts over the full 3-year horizon are reasonable (i.e. less than the population size).
-            # Seeds with missing predictions are treated as infeasible (can't verify them), and are
-            # dropped here so they never enter the val-loss-based multistart cut below.
-            n_rows_before    = nrow(df)
-            feasible_mask    = coalesce.(df.feasible, false)
-            infeasible_seeds = df[.!feasible_mask, :seed]
-            df               = df[feasible_mask, :]
-            println("Removed $(n_rows_before - nrow(df)) infeasible seed(s) " *
-                    "(max_forecast > population=$(population)): $(infeasible_seeds)")
+        println("Processing beta: $(beta_function), location: $(location), train_length: $(train_length), noise: $(noise)")
 
-            # Sort by validation loss (ascending) once
-            sort!(df, :best_val_loss, rev=false)
-            n_rows = size(df, 1)
+        sim_name_dir = joinpath(sim_root_dir, loc_folder)
+        population   = POPULATION[location]
 
-            for MS_limit in [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-                n_rows_MS     = Int(floor(n_rows * MS_limit))
-                seeds_to_keep = df[1:end-n_rows_MS, :seed]
+        # Extract and save summary once per noise level
+        df       = summarise_results(sim_name_dir, population)
+        if nrow(df) == 0
+            println("No seed results found in $(sim_name_dir), skipping.")
+            continue
+        end
+        out_path = joinpath(sim_name_dir, "results_summary.csv")
+        CSV.write(out_path, df)
+        println("Saved summary to: $out_path")
 
-                seeds_to_keep_path = joinpath(sim_name_dir, "seeds_to_keep_MS=$(MS_limit).jld2")
-                @save seeds_to_keep_path seeds_to_keep
-                println("Saved usable seeds to: $seeds_to_keep_path")
-            end
+        # First check forecasts over the full 3-year horizon are reasonable (i.e. less than the population size).
+        # Seeds with missing predictions are treated as infeasible (can't verify them), and are
+        # dropped here so they never enter the val-loss-based multistart cut below.
+        n_rows_before    = nrow(df)
+        feasible_mask    = coalesce.(df.feasible, false)
+        infeasible_seeds = df[.!feasible_mask, :seed]
+        df               = df[feasible_mask, :]
+        println("Removed $(n_rows_before - nrow(df)) infeasible seed(s) " *
+                "(max_forecast > population=$(population)): $(infeasible_seeds)")
+
+        # Sort by validation loss (ascending) once
+        sort!(df, :best_val_loss, rev=false)
+        n_rows = size(df, 1)
+
+        if n_rows == 0
+            println("No feasible seeds remain in $(sim_name_dir), skipping multistart cuts.")
+            continue
+        end
+
+        for MS_limit in [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+            n_rows_MS     = Int(floor(n_rows * MS_limit))
+            seeds_to_keep = df[1:end-n_rows_MS, :seed]
+
+            seeds_to_keep_path = joinpath(sim_name_dir, "seeds_to_keep_MS=$(MS_limit).jld2")
+            @save seeds_to_keep_path seeds_to_keep
+            println("Saved usable seeds to: $seeds_to_keep_path")
         end
     end
 end

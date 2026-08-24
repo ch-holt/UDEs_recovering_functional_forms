@@ -217,7 +217,7 @@ for location in ["AK", "AL", "AR", "AZ", "CA", "CO", "CT", "DC", "DE", "FL", "GA
     savefig(beta_against_xhat_plot, joinpath(plot_dir, "beta_against_xhat_plot.png"))
 
     # Restrict to the I/N region actually visited during training
-    train_I = x_hat[1:train_length]
+    train_I = true_data[1:train_length]
     train_I_over_N = train_I ./ population
     y_hat_train = fill(beta0_hat.beta0, train_length)
     true_beta_train = beta_function(location, train_I)
