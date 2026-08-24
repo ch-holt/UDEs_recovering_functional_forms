@@ -22,6 +22,27 @@ function make_seird_functional(beta_function, location, sigma, gamma)
 end
 
 #========================================================
+DEFINE ODE SYSTEM FOR BASELINE
+=========================================================# 
+
+function make_seird_baseline(sigma, gamma, delta)
+    function seird_baseline!(du, u, p, t)
+        S, E, I, R, D = u
+        N = S + E + I + R
+        if N <= 0
+            du .= 0.0
+            return
+        end
+        du[1] = -p.beta0 * S * I / N
+        du[2] = p.beta0 * S * I / N - sigma * E      
+        du[3] = sigma * E - (gamma + delta) * I  
+        du[4] = gamma * I                           
+        du[5] = delta * I
+    end
+    return seird_baseline!
+end
+
+#========================================================
 DEFINE FUNCTION TO RUN ODE SYSTEM FOR A BETA FORM
 =========================================================# 
 

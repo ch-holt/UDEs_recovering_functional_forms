@@ -67,8 +67,15 @@ end
 
 beta_function = beta_exp
 
+const MAIN_SWEEP_LOCATIONS = ["AK","AL","AR","AZ","CA","CO","CT","DC","DE","FL","GA","HI","IA","ID","IL","IN","KS","KY",
+    "LA","MA","MD","ME","MI","MN","MO","MS","MT","NC","ND","NE","NH","NJ","NM","NV","NY","OH","OK","OR","PA","RI","SD",
+    "TN","UT","VA","VT","WI","WV","WY"]  # 48 locations with completed beta_exp UDE runs (excludes SC, TX, WA)
+
 for train_length in [7,14,21,28,35,42,49,56,60, 63, 70, 77, 84, 91, 100, 125, 150,175, 200, 365]
-    for location in ["MA"]
+    # train_length=365 is the main sweep (all locations); other train_lengths are the
+    # MA-only train_length-limitation sweep, since that's the only location they were run for.
+    locations = train_length == 365 ? MAIN_SWEEP_LOCATIONS : ["MA"]
+    for location in locations
         for noise in [0.0]
             println("Processing location: $(location), train_length: $(train_length), noise: $(noise)")
 

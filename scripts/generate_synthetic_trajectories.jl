@@ -139,7 +139,7 @@ const sigma = 1/3
 # Infectious period of 10 days represented by recovery rate gamma
 const gamma = 1/10
 
-noise_levels = [0, 0.01, 0.025, 0.05, 0.1, 0.2]
+noise_levels = [0, 0.01, 0.025, 0.05, 0.1, 0.2, 0.25, 0.3, 0.35, 0.4]
 beta_function = [beta_exp, beta_rational, beta_mixed]
 # Loop through each combination of parameters for each state and generate synthetic data
 #for location in keys(POPULATION)

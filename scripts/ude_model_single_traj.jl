@@ -100,7 +100,7 @@ function run_model(sim_name, beta_function, location, data, true_data, train_len
 
     # Create trajectory plot
     # loss_traj_noisy: fit to the (possibly noisy) data the model actually trained on - diagnostic only
-    # loss_traj_true: recovery of the noise-free trajectory - the headline metric for "did we recover the truth"
+    # loss_traj_true: recovery of the noise-free trajectory
     loss_traj_noisy = loss_nmse(x_hat, data)
     loss_traj_true = loss_nmse(x_hat, true_data)
 
