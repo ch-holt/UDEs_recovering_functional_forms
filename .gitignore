@@ -11,3 +11,7 @@ scripts/run_SR_tests.jl
 data_old/
 figures/
 .claude/
+present_results_noise.jl
+present_results_trainlength.jl
+present_results_udes.jl
+experiment_tracking.xlsx

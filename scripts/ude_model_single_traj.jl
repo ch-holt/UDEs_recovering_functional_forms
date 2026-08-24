@@ -100,7 +100,7 @@ function run_model(sim_name, beta_function, location, data, true_data, train_len
 
     # Create trajectory plot
     # loss_traj_noisy: fit to the (possibly noisy) data the model actually trained on - diagnostic only
-    # loss_traj_true: recovery of the noise-free trajectory - the headline metric for "did we recover the truth"
+    # loss_traj_true: recovery of the noise-free trajectory
     loss_traj_noisy = loss_nmse(x_hat, data)
     loss_traj_true = loss_nmse(x_hat, true_data)
 
@@ -244,8 +244,8 @@ for location in ["WY"]
     LOAD DATA
     =========================================================#
 
-    dataset = JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_beta_exp", "synthetic_$(location)", "noise=$(noise).jld2"))
-    true_dataset = noise == 0 ? dataset : JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_beta_exp", "synthetic_$(location)", "noise=0.0.jld2"))
+    dataset = JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_$(beta_function)", "synthetic_$(location)", "noise=$(noise).jld2"))
+    true_dataset = noise == 0 ? dataset : JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_$(beta_function)", "synthetic_$(location)", "noise=0.0.jld2"))
 
     local data = dataset["infectious"]
     local true_data = true_dataset["infectious"]
