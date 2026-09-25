@@ -19,7 +19,7 @@ using SymbolicRegression
 using CSV
 using DataFrames
 
-include(joinpath(@__DIR__, "functions.jl"))
+
 using .Functions
 include(joinpath(@__DIR__, "symbolic_regression_module.jl"))
 using .symbolic_regression_module

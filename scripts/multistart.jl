@@ -73,6 +73,7 @@ const BETA_FUNCTIONS = Dict("beta_exp" => beta_exp, "beta_rational" => beta_rati
 const SIM_NAME_RE = r"^UDE_single_beta=(?<beta>[a-zA-Z_]+)_adam=(?<adam>\d+)_lbfgs=(?<lbfgs>\d+)_traindata=(?<traindata>\d+)_noise=(?<noise>[\d.]+)$"
 
 sims_root = datadir("exp_pro", "sims", "ude_single")
+feasibility_rows = []
 
 for sim in sort(readdir(sims_root))
     m = match(SIM_NAME_RE, sim)
@@ -112,8 +113,21 @@ for sim in sort(readdir(sims_root))
         feasible_mask    = coalesce.(df.feasible, false)
         infeasible_seeds = df[.!feasible_mask, :seed]
         df               = df[feasible_mask, :]
-        println("Removed $(n_rows_before - nrow(df)) infeasible seed(s) " *
+        n_infeasible     = n_rows_before - nrow(df)
+        pct_infeasible   = 100 * n_infeasible / n_rows_before
+        println("Removed $(n_infeasible) infeasible seed(s) " *
                 "(max_forecast > population=$(population)): $(infeasible_seeds)")
+
+        push!(feasibility_rows, (
+            sim_name       = sim,
+            beta           = beta_function,
+            train_length   = train_length,
+            noise          = noise,
+            location       = location,
+            n_seeds        = n_rows_before,
+            n_infeasible   = n_infeasible,
+            pct_infeasible = pct_infeasible,
+        ))
 
         # Sort by validation loss (ascending) once
         sort!(df, :best_val_loss, rev=false)
@@ -125,13 +139,24 @@ for sim in sort(readdir(sims_root))
         end
 
         for MS_limit in [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+            seeds_to_keep_path = joinpath(sim_name_dir, "seeds_to_keep_MS=$(MS_limit).jld2")
+            if isfile(seeds_to_keep_path)
+                println("Already have $seeds_to_keep_path, skipping.")
+                continue
+            end
+
             n_rows_MS     = Int(floor(n_rows * MS_limit))
             seeds_to_keep = df[1:end-n_rows_MS, :seed]
 
-            seeds_to_keep_path = joinpath(sim_name_dir, "seeds_to_keep_MS=$(MS_limit).jld2")
             @save seeds_to_keep_path seeds_to_keep
             println("Saved usable seeds to: $seeds_to_keep_path")
         end
     end
 end
+
+feasibility_df = DataFrame(feasibility_rows)
+sort!(feasibility_df, :pct_infeasible, rev=true)
+feasibility_out_path = datadir("exp_pro", "feasibility_summary.csv")
+CSV.write(feasibility_out_path, feasibility_df)
+println("\nSaved feasibility summary ($(nrow(feasibility_df)) combos) to: $(feasibility_out_path)")
 

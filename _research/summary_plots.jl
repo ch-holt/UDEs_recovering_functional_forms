@@ -25,6 +25,10 @@ multistart = true
 const FORECAST_COLORS = [:royalblue, :forestgreen, :darkorange, :purple]
 const FORECAST_LABELS = ["Week 1", "Week 2", "Week 3", "Week 4"]
 
+# SR overlay colours (matches present_results_sr.jl)
+const SR_RIBBON_COLOR = :mediumpurple
+const SR_MEDIAN_COLOR = :purple4
+
 #========================================================
 CONFIGURATION
 =========================================================#
@@ -56,6 +60,17 @@ for sim in sort(readdir(sims_root))
 
                 model_name = "ude_single"
                 sim_name   = sim
+
+                # Resume support: skip MS_limit combos whose full plot set was already
+                # written by a previous (interrupted) run, so a re-run only does new work.
+                sfx_check     = "_MS=$(MS_limit)"
+                save_dir_check = plotsdir("sims", model_name, sim_name, "synthetic_$(location)")
+                expected_files = ["traj_full", "beta_time_full", "beta_01", "traj_train",
+                                   "beta_time_train", "beta_train_region", "traj_forecast", "beta_time_forecast"]
+                if all(isfile(joinpath(save_dir_check, "$(f)$(sfx_check).png")) for f in expected_files)
+                    println("Already have all plots for $(sim_name)/$(location) MS=$(MS_limit), skipping.")
+                    continue
+                end
 
                 # Must match the architecture used in training
                 hidden_dims         = 5
@@ -128,8 +143,12 @@ for sim in sort(readdir(sims_root))
                 beta_train_rows = Vector{Vector{Float64}}()
                 beta_01_rows    = Vector{Vector{Float64}}()
 
+                sr_inf_rows       = Vector{Vector{Float64}}()
+                sr_beta_time_rows = Vector{Vector{Float64}}()
+                sr_beta_01_rows   = Vector{Vector{Float64}}()
+
                 #========================================================
-                RETRIEVE UDE RESULTS
+                RETRIEVE UDE RESULTS (+ SR if available)
                 =========================================================#
 
                 for folder in seed_folders
@@ -154,9 +173,25 @@ for sim in sort(readdir(sims_root))
                     push!(beta_time_rows,  beta_traj)
                     push!(beta_train_rows, beta_train_r)
                     push!(beta_01_rows,    beta_0_1)
+
+                    sr_path = projectdir("scripts", "outputs", sim_name, "synthetic_$(location)", folder, "SR_report.jld2")
+                    if isfile(sr_path)
+                        sr = JLD2.load(sr_path)
+                        push!(sr_inf_rows,       vec(sr["SR_inf"])[1:length(true_inf)])
+                        push!(sr_beta_time_rows, vec(sr["SR_beta_days"])[1:length(true_inf)])
+                        push!(sr_beta_01_rows,   vec(sr["SR_beta_0_1"]))
+                    end
                 end
 
                 isempty(inf_rows) && continue
+
+                have_sr = !isempty(sr_inf_rows)
+                if have_sr
+                    sr_inf_med,  sr_inf_lo,  sr_inf_hi  = let m = stack(sr_inf_rows;       dims=1); med = vec(median(m; dims=1)); (med, med .- vec(minimum(m; dims=1)), vec(maximum(m; dims=1)) .- med) end
+                    sr_time_med, sr_time_lo, sr_time_hi = let m = stack(sr_beta_time_rows; dims=1); med = vec(median(m; dims=1)); (med, med .- vec(minimum(m; dims=1)), vec(maximum(m; dims=1)) .- med) end
+                    sr_I_med,    sr_I_lo,    sr_I_hi    = let m = stack(sr_beta_01_rows;   dims=1); med = vec(median(m; dims=1)); (med, med .- vec(minimum(m; dims=1)), vec(maximum(m; dims=1)) .- med) end
+                    println("  SR: $(length(sr_inf_rows)) / $(length(seed_folders)) seeds have SR_report.jld2")
+                end
 
                 #========================================================
                 PLOT 1 — FULL TRAJECTORY (all 365 days)
@@ -166,6 +201,12 @@ for sim in sort(readdir(sims_root))
                     plot_ensemble_summary(days, true_inf, I_grid, true_beta_over_time, true_beta_01,
                                         I_N_min, I_N_max, location,
                                         inf_rows, beta_time_rows, beta_01_rows)
+
+                if have_sr
+                    plot!(traj_full,     days[1:length(sr_inf_med)],  sr_inf_med;  ribbon=(sr_inf_lo,  sr_inf_hi),  color=SR_RIBBON_COLOR, fillalpha=0.2, linewidth=2, linestyle=:dash, label="SR (n=$(length(sr_inf_rows)))")
+                    plot!(beta_time_full, days[1:length(sr_time_med)], sr_time_med; ribbon=(sr_time_lo, sr_time_hi), color=SR_RIBBON_COLOR, fillalpha=0.2, linewidth=2, linestyle=:dash, label="")
+                    plot!(beta_01_plot,   I_grid,                       sr_I_med;   ribbon=(sr_I_lo,    sr_I_hi),    color=SR_RIBBON_COLOR, fillalpha=0.2, linewidth=2, linestyle=:dash, label="")
+                end
 
                 #========================================================
                 PLOT 2 — TRAINING WINDOW ONLY (up to train_length)
@@ -177,14 +218,14 @@ for sim in sort(readdir(sims_root))
 
                 train_true_beta = true_beta_over_time[1:train_length]
 
-                traj_train = plot(train_days, train_noisy_inf;
-                    color=:black, linewidth=2, label="Observed data",
+                traj_train = scatter(train_days[1:7:end], train_noisy_inf[1:7:end];
+                    color=:black, markersize=3, markerstrokewidth=0, label="Observed data (every 7th day)",
                     legend=:outertopright, left_margin=10Plots.mm, bottom_margin=8Plots.mm)
-                beta_time_train = plot(train_days, train_true_beta;
-                    color=:black, linewidth=2, label="True β",
+                beta_time_train = scatter(train_days[1:7:end], train_true_beta[1:7:end];
+                    color=:black, markersize=3, markerstrokewidth=0, label="True β (every 7th day)",
                     legend=:outertopright, left_margin=10Plots.mm, bottom_margin=8Plots.mm)
-                beta_train_plot = plot(I_grid_train, true_beta_train_region;
-                    color=:black, linewidth=2, label="True β",
+                beta_train_plot = scatter(I_grid_train[1:7:end], true_beta_train_region[1:7:end];
+                    color=:black, markersize=2, markerstrokewidth=0, label="True β (every 7th pt)",
                     legend=:outertopright, left_margin=10Plots.mm, bottom_margin=8Plots.mm)
 
                 for i_traj in inf_rows
@@ -222,6 +263,17 @@ for sim in sort(readdir(sims_root))
                 xlabel!(beta_train_plot, "I/N")
                 ylabel!(beta_train_plot, "β")
 
+                if have_sr
+                    sr_inf_train_med,  sr_inf_train_lo,  sr_inf_train_hi  = let m = stack([r[1:train_length] for r in sr_inf_rows];       dims=1); med = vec(median(m; dims=1)); (med, med .- vec(minimum(m; dims=1)), vec(maximum(m; dims=1)) .- med) end
+                    sr_time_train_med, sr_time_train_lo, sr_time_train_hi = let m = stack([r[1:train_length] for r in sr_beta_time_rows]; dims=1); med = vec(median(m; dims=1)); (med, med .- vec(minimum(m; dims=1)), vec(maximum(m; dims=1)) .- med) end
+                    # SR beta on training I/N range: extract I_grid subset covering [I_N_train_min, I_N_train_max]
+                    train_01_mask = (I_grid .>= I_N_train_min) .& (I_grid .<= I_N_train_max)
+                    sr_I_train_med, sr_I_train_lo, sr_I_train_hi = let m = stack([r[train_01_mask] for r in sr_beta_01_rows]; dims=1); med = vec(median(m; dims=1)); (med, med .- vec(minimum(m; dims=1)), vec(maximum(m; dims=1)) .- med) end
+                    plot!(traj_train,     train_days, sr_inf_train_med;  ribbon=(sr_inf_train_lo,  sr_inf_train_hi),  color=SR_RIBBON_COLOR, fillalpha=0.2, linewidth=2, linestyle=:dash, label="SR")
+                    plot!(beta_time_train, train_days, sr_time_train_med; ribbon=(sr_time_train_lo, sr_time_train_hi), color=SR_RIBBON_COLOR, fillalpha=0.2, linewidth=2, linestyle=:dash, label="")
+                    plot!(beta_train_plot, I_grid[train_01_mask], sr_I_train_med; ribbon=(sr_I_train_lo, sr_I_train_hi), color=SR_RIBBON_COLOR, fillalpha=0.2, linewidth=2, linestyle=:dash, label="")
+                end
+
                 #========================================================
                 PLOT 3 — FORECAST (training + 4 coloured weeks)
                 =========================================================#
@@ -229,12 +281,12 @@ for sim in sort(readdir(sims_root))
                 max_day   = min(train_length + 28, length(true_inf))
                 plot_days = days[1:max_day]
 
-                traj_forecast      = plot(plot_days, true_inf[1:max_day];
-                    color=:black, linewidth=2, label="Data",
+                traj_forecast      = scatter(plot_days[1:7:end], true_inf[1:7:max_day];
+                    color=:black, markersize=3, markerstrokewidth=0, label="Data (every 7th day)",
                     legend=:outertopright, left_margin=10Plots.mm, bottom_margin=8Plots.mm,
                     titlefontsize=9)
-                beta_time_forecast = plot(plot_days, true_beta_over_time[1:max_day];
-                    color=:black, linewidth=2, label="True β",
+                beta_time_forecast = scatter(plot_days[1:7:end], true_beta_over_time[1:7:max_day];
+                    color=:black, markersize=3, markerstrokewidth=0, label="True β (every 7th day)",
                     legend=:outertopright, left_margin=10Plots.mm, bottom_margin=8Plots.mm,
                     titlefontsize=9)
 
@@ -261,6 +313,15 @@ for sim in sort(readdir(sims_root))
 
                 vline!(traj_forecast,      [days[train_length]]; linestyle=:dash, color=:black, linewidth=1, label="Train cutoff")
                 vline!(beta_time_forecast, [days[train_length]]; linestyle=:dash, color=:black, linewidth=1, label="Train cutoff")
+
+                if have_sr
+                    first_sr = true
+                    for (sr_i, sr_b) in zip(sr_inf_rows, sr_beta_time_rows)
+                        plot!(traj_forecast,      plot_days, sr_i[1:max_day];  color=SR_RIBBON_COLOR, alpha=0.2, linewidth=1, label=first_sr ? "SR" : "")
+                        plot!(beta_time_forecast, plot_days, sr_b[1:max_day]; color=SR_RIBBON_COLOR, alpha=0.2, linewidth=1, label="")
+                        first_sr = false
+                    end
+                end
 
                 # Per-week CRPS
                 inf_crps_weeks  = Float64[]
@@ -311,19 +372,10 @@ for sim in sort(readdir(sims_root))
 
                 println("Done — plots saved to: $(save_dir)")
 
-                #========================================================
-                BEST UDE (SR retrieval skipped — no SR_report.jld2 outputs
-                exist locally yet; re-add that block once the SR pipeline
-                has been run for these sims)
-                =========================================================#
-
-                try
-                    I_nn, best_results, best_folder = extract_best_ude(sim_dir, true_inf, multistart, MS_limit)
-                    println("Best UDE results found in folder: $(best_folder)")
-                catch e
-                    println("Could not determine best UDE for $(sim_name)/$(location) MS=$(MS_limit): $(e)")
-                end
+                # Long batch run over many combos — release Plots.jl figure objects and
+                # force a GC pass each iteration to keep memory bounded.
+                Plots.closeall()
+                GC.gc()
             end
         end
     end
-end

@@ -7,20 +7,20 @@ function plot_ensemble_summary(days, true_inf, I_grid, true_beta_over_time, true
     INITIALISE PLOTS WITH TRUE BETA AS REFERENCE
     =========================================================#
 
-    traj_plot = plot(days[1:length(true_inf)], true_inf;
-        color=:black, linewidth=2, label="Data",
+    traj_plot = scatter(days[1:7:length(true_inf)], true_inf[1:7:end];
+        color=:black, markersize=3, markerstrokewidth=0, label="Data (every 7th day)",
         xlabel="Day", ylabel="Infectious individuals",
         title="Infectious trajectory — ($(location))",
         legend=:outertopright, left_margin=10Plots.mm)
 
-    beta_time_plot = plot(days[1:length(true_beta_over_time)], true_beta_over_time;
-        color=:black, linewidth=2, label="True β",
+    beta_time_plot = scatter(days[1:7:length(true_beta_over_time)], true_beta_over_time[1:7:end];
+        color=:black, markersize=3, markerstrokewidth=0, label="True β (every 7th day)",
         xlabel="Day", ylabel="β(t)",
         title="Beta over time — ($(location))",
         legend=:outertopright)
 
-    beta_01_plot = plot(I_grid, true_beta_01;
-        color=:black, linewidth=2, label="True β",
+    beta_01_plot = scatter(I_grid[1:10:end], true_beta_01[1:10:end];
+        color=:black, markersize=2, markerstrokewidth=0, label="True β (every 10th pt)",
         xlabel="I/N", ylabel="β(I/N)",
         title="Beta vs I/N — ($(location))",
         legend=:outertopright)
