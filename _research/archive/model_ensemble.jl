@@ -8,7 +8,7 @@ Pkg.instantiate()
 cd(@__DIR__)
 using DrWatson
 @quickactivate("UDE_FUNCTIONAL_FORMS")
-include(joinpath(@__DIR__, "functions.jl"))
+
 using .Functions
 using JLD2
 using Plots

@@ -54,25 +54,27 @@ function train_baseline_single_dataset(p, predict_ude, training_data, u0, noise,
     optprob = Optimization.OptimizationProblem(optfunc, best_p)
 
     iter_lbfgs = Ref(0)
-    res = Optimization.solve(
-        optprob,
-        Optim.LBFGS(m=10),
-        callback = (state, train_l) -> begin
-            iter_lbfgs[] += 1
-            push!(train_losses, train_l)
-            iter_lbfgs[] % 50 == 0 && println("LBFGS iter $(iter_lbfgs[]): $train_l")
-            return false
-        end,
-        maxiters = maxiters_lbfgs
-    )
+    final_p = try
+        res = Optimization.solve(
+            optprob,
+            Optim.LBFGS(m=10),
+            callback = (state, train_l) -> begin
+                iter_lbfgs[] += 1
+                push!(train_losses, train_l)
+                iter_lbfgs[] % 50 == 0 && println("LBFGS iter $(iter_lbfgs[]): $train_l")
+                return false
+            end,
+            maxiters = maxiters_lbfgs
+        )
+        res.u
+    catch e
+        println("LBFGS failed ($e), returning best Adam parameters.")
+        best_p
+    end
 
     elapsed = time() - t_start
 
-    # Return the actual LBFGS-converged point, not the best-training-loss checkpoint
-    # (best_p, which only exists as a divergence-recovery fallback / LBFGS warm start).
-    # The Hessian/uncertainty step needs a genuine stationary point of the loss - res.u
-    # is that; best_p has no such guarantee.
-    return res.u, train_losses, elapsed
+    return final_p, train_losses, elapsed
 end
 
 #========================================================

@@ -18,7 +18,7 @@ using DataFrames
 
 include("estimated_ground_truth_parameters.jl")
 using .EstimatedGroundTruthParameters: POPULATION, PREVALENCE, R0_REPRODUCTION, DELTA, ZETA
-include(joinpath(@__DIR__, "functions.jl"))
+
 using .Functions
 include(joinpath(@__DIR__, "symbolic_regression_module.jl"))
 using .symbolic_regression_module

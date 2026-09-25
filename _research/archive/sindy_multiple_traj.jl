@@ -17,7 +17,7 @@ using Lux
 using JLD2
 using ComponentArrays
 using Plots
-include(joinpath(@__DIR__, "functions.jl"))
+
 using .Functions
 using Statistics
 using Random; rng = Random.default_rng()
