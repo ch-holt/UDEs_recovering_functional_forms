@@ -93,7 +93,7 @@ end
 DEFINE NUMBER OF NEURAL NETWORK INPUTS
 =========================================================# 
 
-nn_inputs(p, I, ::Val{1}) = [I / p.population]
+nn_inputs(population::Real, I, ::Val{1}) = [I / population]
 
 function nn_inputs(p, I, ::Val{4})
     delta_norm = (log(p.delta) - log(1e-6)) / (log(1e-2) - log(1e-6))
@@ -105,7 +105,7 @@ end
 #========================================================
 DEFINE UDE MODEL
 =========================================================# 
-function make_seird_nn(beta_network, st, sigma, gamma, input_size::Int)
+function make_seird_nn(beta_network, st, sigma, gamma, delta, population, input_size::Int)
     valn = Val(input_size)
     function seird_nn!(du, u, p, t)
         S, E, I, R, D = u
@@ -116,14 +116,14 @@ function make_seird_nn(beta_network, st, sigma, gamma, input_size::Int)
             return
         end
 
-        nn_input = nn_inputs(p, I, valn)
+        nn_input = nn_inputs(population, I, valn)
         beta = beta_network(nn_input, p.nn_params, st)[1][1]
 
         du[1] = -beta * S * I / N
         du[2] = beta * S * I / N - sigma * E
-        du[3] = sigma * E - (gamma + p.delta) * I
+        du[3] = sigma * E - (gamma + delta) * I
         du[4] = gamma * I
-        du[5] = p.delta * I
+        du[5] = delta * I
     end
     return seird_nn!
 end
@@ -147,7 +147,7 @@ end
 #========================================================
 DEFINE UDE MODEL
 =========================================================# 
-function make_seird_sr(mach, r, sigma, gamma, input_size::Int)
+function make_seird_sr(mach, r, sigma, gamma, delta, population, input_size::Int)
     valn = Val(input_size)
     function seird_sr!(du, u, p, t)
         S, E, I, R, D = u
@@ -158,14 +158,14 @@ function make_seird_sr(mach, r, sigma, gamma, input_size::Int)
             return
         end
 
-        nn_input = reshape(nn_inputs(p, I, valn), 1, :)
+        nn_input = reshape(nn_inputs(population, I, valn), 1, :)
         beta = predict(mach, (data=nn_input, idx=r.best_idx))[1]
 
         du[1] = -beta * S * I / N
         du[2] = beta * S * I / N - sigma * E
-        du[3] = sigma * E - (gamma + p.delta) * I
+        du[3] = sigma * E - (gamma + delta) * I
         du[4] = gamma * I
-        du[5] = p.delta * I
+        du[5] = delta * I
     end
     return seird_sr!
 end

@@ -66,7 +66,7 @@ function symbolic_regression(I_nn, best_results, output_dir, input_size, locatio
     max_i_norm = maximum(norm_i_traj)
     min_i_norm = minimum(norm_i_traj)
 
-    SR_input_1000, SR_input_0_1, SR_input_days, nn_input_1000, nn_input_0_1, nn_input_days, I_grid, range_0_1 = build_sr_inputs(p_trained, norm_i_traj, min_i_norm, max_i_norm, input_size)
+    SR_input_1000, SR_input_0_1, SR_input_days, nn_input_1000, nn_input_0_1, nn_input_days, I_grid, range_0_1 = build_sr_inputs(p_trained, population, norm_i_traj, min_i_norm, max_i_norm, input_size)
     
     nn_output_1000 = vec(beta_network(nn_input_1000, p_trained.nn_params, st_nn)[1])
     nn_output_0_1 = vec(beta_network(nn_input_0_1, p_trained.nn_params, st_nn)[1])
@@ -132,8 +132,6 @@ for train_length in [365]
             u0 = [S0, E0, I0, R0_recovered, D0]
 
             # Define ODE problem with recovered SR equation
-
-            p_sr = ComponentArray(population=population, delta=delta)
 
             seed_folders = get_seed_folders(root, multistart, MS_limit)
 
@@ -240,8 +238,8 @@ for train_length in [365]
                 =============================================================#
 
 
-                seird_sr! = make_seird_sr(mach, r, sigma, gamma, input_size)
-                prob_sr = ODEProblem(seird_sr!, u0, tspan, p_sr)
+                seird_sr! = make_seird_sr(mach, r, sigma, gamma, delta, population, input_size)
+                prob_sr = ODEProblem(seird_sr!, u0, tspan, p_trained)
                 sol_sr = solve(prob_sr, Tsit5(), saveat=1.0)
                 i_sr = sol_sr[3, 1:length(obs)]
 

@@ -2,7 +2,7 @@
 GENERATE SYMBOLIC REGRESSION INPUTS/OUTPUTS
 =========================================================# 
 
-function build_sr_inputs(p_all, norm_i_traj, min_i_norm, max_i_norm, number_of_nn_inputs::Int)
+function build_sr_inputs(p_all, population, norm_i_traj, min_i_norm, max_i_norm, number_of_nn_inputs::Int)
 
     # We do SR on this grid
     I_grid = collect(range(min_i_norm, max_i_norm; length=1000))
@@ -14,9 +14,9 @@ function build_sr_inputs(p_all, norm_i_traj, min_i_norm, max_i_norm, number_of_n
     # Multiply by popultion because nn_input normalises
     # Single dataset just has I_grid
     # Multiple datasets has I_grid, beta0_norm, zeta_norm, delta_norm
-    nn_input_1000  = hcat([nn_inputs(p_all, i*p_all.population, valn) for i in I_grid]...)
-    nn_input_0_1 = hcat([nn_inputs(p_all, i*p_all.population, valn) for i in range_0_1]...)
-    nn_input_days  = hcat([nn_inputs(p_all, i*p_all.population, valn) for i in norm_i_traj]...)
+    nn_input_1000  = hcat([nn_inputs(population, i*population, valn) for i in I_grid]...)
+    nn_input_0_1 = hcat([nn_inputs(population, i*population, valn) for i in range_0_1]...)
+    nn_input_days  = hcat([nn_inputs(population, i*population, valn) for i in norm_i_traj]...)
 
     # Build SR inputs - the same as NN inputs but formatted as a dataframe
     if number_of_nn_inputs == 1

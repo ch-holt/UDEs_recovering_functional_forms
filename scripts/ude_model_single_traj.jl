@@ -39,14 +39,7 @@ function run_model(sim_name, beta_function, location, data, true_data, train_len
     p = Float64.(p)
 
     # Combine all parameters into a single object for optimisation
-    p_init = ComponentArray(
-        nn_params = p,
-        gamma = gamma,
-        sigma = sigma,
-        delta = delta,
-        tmax = train_length,
-        population = population
-    )
+    p_init = ComponentArray(nn_params = p)
 
     training_data = data[1:train_length]
 
@@ -273,7 +266,7 @@ for location in ["WY"]
             local beta_network, p_nn_temp, st_nn = build_neural_network(rng, hidden_dims, input_size, output_size,
                                         activation_function, final_activation_function)
 
-            local seird_nn! = make_seird_nn(beta_network, st_nn, sigma, gamma, input_size)
+            local seird_nn! = make_seird_nn(beta_network, st_nn, sigma, gamma, delta, population, input_size)
             local prob_ude = ODEProblem(seird_nn!, u0, tspan, p_nn_temp)
             local predict_ude = make_predict_ude(prob_ude, train_length)
 
