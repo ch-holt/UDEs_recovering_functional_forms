@@ -1,11 +1,7 @@
 #========================================================
 SCRIPT TO FIT A CONSTANT BETA TO THE ODE
 =========================================================#  
-using Pkg
-# Activate the project
-Pkg.activate(joinpath(@__DIR__, ".."))
-Pkg.instantiate()
-cd(@__DIR__)
+
 using DrWatson
 @quickactivate("UDE_FUNCTIONAL_FORMS")
 using Lux

@@ -2,11 +2,6 @@
 SCRIPT TO USE SYMBOLICREGRESSION.JL FOR SYMBOLIC REGRESSION
 =========================================================#  
 
-using Pkg
-# Activate the project
-Pkg.activate(joinpath(@__DIR__, ".."))
-Pkg.instantiate()
-cd(@__DIR__)
 using DrWatson
 @quickactivate("UDE_FUNCTIONAL_FORMS")
 using JLD2

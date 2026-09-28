@@ -1,11 +1,7 @@
 #========================================================
 SCRIPT TO TRAIN THE UDE MODEL FOR A SINGLE TRAJECTORY
 =========================================================#  
-using Pkg
-# Activate the project
-Pkg.activate(joinpath(@__DIR__, ".."))
-Pkg.instantiate()
-cd(@__DIR__)
+
 using DrWatson
 @quickactivate("UDE_FUNCTIONAL_FORMS")
 using Lux
@@ -259,6 +255,14 @@ for location in ["WY"]
     local u0 = [S0, E0, I0, R0_recovered, D0]
 
     for i = 1:100
+        # Resume support: skip a seed whose results already exist, so a rerun (e.g. after
+        # a timeout or crash) only computes the seeds still missing instead of starting
+        # over from seed 1.
+        results_path = datadir("exp_pro", "sims", model_name, sim_name, "synthetic_$(location)", "simulation_seed=$(i)", "results.jld2")
+        if isfile(results_path)
+            println("Seed $(i) already exists for $(location), skipping.")
+            continue
+        end
         # Catch any errors during the run so that the following seeds still run
         try
             local rng = Random.seed!(i)

@@ -3,11 +3,6 @@
 SCRIPT TO GENERATE SYNTHETIC TRAJECTORIES
 =========================================================# 
 
-using Pkg
-# Activate the project
-Pkg.activate(joinpath(@__DIR__, ".."))
-Pkg.instantiate()
-cd(@__DIR__)
 
 using DrWatson
 
