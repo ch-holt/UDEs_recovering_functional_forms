@@ -147,7 +147,7 @@ maxiters_lbfgs = 2000
 const r = noise == 0 ? Inf : 1 / noise^2
 
 model_name = "ude_single"
-sim_name = "rosenbrock23_UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_traindata=$(train_length)_noise=$(noise)"
+sim_name = "500its_rosenbrock23_UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_traindata=$(train_length)_noise=$(noise)"
 
 if !isdir(datadir("exp_pro","sims", model_name, sim_name))
     mkpath(datadir("exp_pro","sims", model_name, sim_name))
@@ -185,7 +185,7 @@ S0 = population - E0 - I0 - R0_recovered - D0
 u0 = [S0, E0, I0, R0_recovered, D0]
 
 # run the model on multiple threads
-Threads.@threads for i = 1:100
+Threads.@threads for i = 1:500
     # Resume support: skip a seed whose results already exist, so a rerun (e.g. after
     # a timeout or crash) only computes the seeds still missing instead of starting
     # over from seed 1.
