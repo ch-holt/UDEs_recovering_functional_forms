@@ -62,9 +62,7 @@ end
 
 
 # Discover every sim folder that actually exists on disk, rather than hardcoding
-# beta/train_length/noise/location combinations — the real sweep matrix is irregular
-# (e.g. the train_length sweep only ran for MA, the noise sweep only at train_length=365),
-# so directory discovery is the only thing that stays correct as new sims land.
+# beta/train_length/noise/location combinations
 const BETA_FUNCTIONS = Dict("beta_exp" => beta_exp, "beta_rational" => beta_rational, "beta_mixed" => beta_mixed)
 const SIM_NAME_RE = r"^UDE_single_beta=(?<beta>[a-zA-Z_]+)_adam=(?<adam>\d+)_lbfgs=(?<lbfgs>\d+)_traindata=(?<traindata>\d+)_noise=(?<noise>[\d.]+)$"
 
