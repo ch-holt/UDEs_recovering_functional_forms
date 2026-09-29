@@ -61,7 +61,7 @@ function run_model(locations, beta_function, beta_network; maxiters_adam, maxite
     for location in locations
         filename = "synthetic_$(location)"
         # Extract trajectory of infectious individuals
-        dataset = JLD2.load(datadir("exp_pro","synthetic_data", "synthetic_trajectories_beta_exp", filename, "noise=$(noise).jld2"))
+        dataset = JLD2.load(datadir("exp_pro","synthetic_data", "synthetic_trajectories_RB_beta_exp", filename, "noise=$(noise).jld2"))
         data = dataset["infectious"]
         days = dataset["days"]
 

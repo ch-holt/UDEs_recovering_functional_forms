@@ -131,17 +131,17 @@ function train_ude_single_dataset(p, predict_ude, training_data, u0, beta_functi
 
     # Random split
 
-    #val_tpts = 5:5:length(training_data)
-    #train_tpts = setdiff(1:length(training_data), val_tpts)
+    val_tpts = 5:5:length(training_data)
+    train_tpts = setdiff(1:length(training_data), val_tpts)
 
     # Middle 20% of beta
-    beta_traj = beta_function(location, training_data)
+    #beta_traj = beta_function(location, training_data)
 
-    q40 = quantile(beta_traj, 0.4)
-    q60 = quantile(beta_traj, 0.6)
+    #q40 = quantile(beta_traj, 0.4)
+    #q60 = quantile(beta_traj, 0.6)
 
-    val_tpts   = findall(b -> q40 <= b <= q60, beta_traj)
-    train_tpts = setdiff(1:length(training_data), val_tpts)
+    #val_tpts   = findall(b -> q40 <= b <= q60, beta_traj)
+    #train_tpts = setdiff(1:length(training_data), val_tpts)
 
     # Create 1D vector to track losses during training
     train_losses = Float64[]

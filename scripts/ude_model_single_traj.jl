@@ -46,7 +46,7 @@ function run_model(sim_name, beta_function, location, data, true_data, train_len
 
     # Evaluate final long term results 
     long_term_prob= remake(prob_ude, p = p_trained, tspan = (1.0, 3*365.0), u0 = u0)
-    long_term_pred = solve(long_term_prob, Tsit5(), saveat=1, dense = false)
+    long_term_pred = solve(long_term_prob, Rosenbrock23(), saveat=1, dense = false)
 
     # Convert to a 1 x N matrix
     x_hat = long_term_pred[3, 1:length(data)]
@@ -147,7 +147,7 @@ maxiters_lbfgs = 2000
 const r = noise == 0 ? Inf : 1 / noise^2
 
 model_name = "ude_single"
-sim_name = "train_val_midbeta_UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_traindata=$(train_length)_noise=$(noise)"
+sim_name = "rosenbrock23_UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_traindata=$(train_length)_noise=$(noise)"
 
 if !isdir(datadir("exp_pro","sims", model_name, sim_name))
     mkpath(datadir("exp_pro","sims", model_name, sim_name))
@@ -163,8 +163,8 @@ println("Running simulation for location: $(location)")
 LOAD DATA
 =========================================================#
 
-dataset = JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_$(beta_function)", "synthetic_$(location)", "noise=$(noise).jld2"))
-true_dataset = noise == 0 ? dataset : JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_$(beta_function)", "synthetic_$(location)", "noise=0.0.jld2"))
+dataset = JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_RB_$(beta_function)", "synthetic_$(location)", "noise=$(noise).jld2"))
+true_dataset = noise == 0 ? dataset : JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_RB_$(beta_function)", "synthetic_$(location)", "noise=0.0.jld2"))
 
 data = dataset["infectious"]
 true_data = true_dataset["infectious"]

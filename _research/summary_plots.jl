@@ -109,9 +109,9 @@ for sim in sort(readdir(sims_root))
                 LOAD SYNTHETIC DATA AND COMPUTE TRUE BETA
                 =========================================================#
 
-                dataset_path      = datadir("exp_pro", "synthetic_data", "synthetic_trajectories_$(beta_function)",
+                dataset_path      = datadir("exp_pro", "synthetic_data", "synthetic_trajectories_RB_$(beta_function)",
                                              "synthetic_$(location)", "noise=$(noise).jld2")
-                true_dataset_path = noise == 0 ? dataset_path : datadir("exp_pro", "synthetic_data", "synthetic_trajectories_$(beta_function)",
+                true_dataset_path = noise == 0 ? dataset_path : datadir("exp_pro", "synthetic_data", "synthetic_trajectories_RB_$(beta_function)",
                                              "synthetic_$(location)", "noise=0.0.jld2")
                 if !isfile(dataset_path) || !isfile(true_dataset_path)
                     println("Missing synthetic data for $(sim_name)/$(location), skipping.")

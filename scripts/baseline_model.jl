@@ -77,11 +77,11 @@ for (train_length, noise) in sweep_combos
         r = noise == 0 ? Inf : 1 / noise^2
 
         # Only fit a baseline where there's a UDE run to compare it against
-        ude_sim_name = "UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_traindata=$(train_length)_noise=$(noise)"
+        ude_sim_name = "rosenbrock23_UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_traindata=$(train_length)_noise=$(noise)"
         isdir(datadir("exp_pro", "sims", "ude_single", ude_sim_name, "synthetic_$(location)")) || continue
 
         model_name = "baseline_single"
-        sim_name = "baseline_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_traindata=$(train_length)_noise=$(noise)"
+        sim_name = "rosenbrock23_baseline_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_traindata=$(train_length)_noise=$(noise)"
         println("Running simulation for location: $(location), beta=$(beta_function), train_length=$(train_length), noise=$(noise)")
 
         loc_foldername = "synthetic_$(location)"
@@ -95,8 +95,8 @@ for (train_length, noise) in sweep_combos
         LOAD DATA
         =========================================================#
 
-        dataset = JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_$(beta_function)", "synthetic_$(location)", "noise=$(noise).jld2"))
-        true_dataset = noise == 0 ? dataset : JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_$(beta_function)", "synthetic_$(location)", "noise=0.0.jld2"))
+        dataset = JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_RB_$(beta_function)", "synthetic_$(location)", "noise=$(noise).jld2"))
+        true_dataset = noise == 0 ? dataset : JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_RB_$(beta_function)", "synthetic_$(location)", "noise=0.0.jld2"))
 
         local data = dataset["infectious"]
         local training_data = data[1:train_length]
@@ -154,7 +154,7 @@ for (train_length, noise) in sweep_combos
         =========================================================#
 
         long_term_prob = remake(prob, p = beta0_hat, tspan = (1.0, 3*365.0), u0 = u0)
-        long_term_pred = solve(long_term_prob, Tsit5(), saveat=1, dense=false)
+        long_term_pred = solve(long_term_prob, Rosenbrock23(), saveat=1, dense=false)
 
         x_hat = long_term_pred[3, 1:length(data)]
         nT = length(x_hat)
@@ -170,8 +170,8 @@ for (train_length, noise) in sweep_combos
         # uncertainty on beta0 implies for the epidemic curve itself, not just the parameter.
         lower_prob = remake(prob, p = ComponentArray(beta0 = uncertainty.ci_lower), tspan = (1.0, 3*365.0), u0 = u0)
         upper_prob = remake(prob, p = ComponentArray(beta0 = uncertainty.ci_upper), tspan = (1.0, 3*365.0), u0 = u0)
-        x_lower = solve(lower_prob, Tsit5(), saveat=1, dense=false)[3, 1:length(data)]
-        x_upper = solve(upper_prob, Tsit5(), saveat=1, dense=false)[3, 1:length(data)]
+        x_lower = solve(lower_prob, Rosenbrock23(), saveat=1, dense=false)[3, 1:length(data)]
+        x_upper = solve(upper_prob, Rosenbrock23(), saveat=1, dense=false)[3, 1:length(data)]
 
         traj_lo = min.(x_lower, x_upper)
         traj_hi = max.(x_lower, x_upper)
