@@ -27,12 +27,17 @@ DEFINE HYPERPARAMETERS
 # Two sweeps, matching _research/present_results_noise.jl and
 # _research/present_results_trainlength.jl exactly, each run for all three
 # beta functional forms:
-#   - noise sweep:        train_length=365, location=MA, noise in NOISE_LEVELS
-#   - train_length sweep: noise=0.0,        location=MA, train_length in TRAIN_LENGTHS
+#   - noise sweep:        train_length=365, noise in NOISE_LEVELS
+#   - train_length sweep: noise=0.0,        train_length in TRAIN_LENGTHS
+# over every location that has the matching UDE run on disk.
 # sim_name already encodes beta=/traindata=/noise=, so each combo lands under
 # its own name automatically.
 const NOISE_LEVELS  = [0.0, 0.01, 0.025, 0.05, 0.1, 0.2, 0.25, 0.3, 0.35, 0.4]
 const TRAIN_LENGTHS = [7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84, 91, 100, 125, 150, 175, 200, 365]
+
+# Every location is tried, but a baseline is only fitted where the matching
+# UDE run exists on disk (see the skip at the top of the location loop).
+const BASELINE_LOCATIONS = sort(collect(keys(POPULATION)))
 
 sweep_combos = vcat(
     [(train_length=365, noise=n) for n in NOISE_LEVELS],
@@ -68,14 +73,16 @@ for (train_length, noise) in sweep_combos
     maxiters_lbfgs = 2000
 
 
-    location = "CO"
-    println("Running simulation for location: $(location), train_length=$(train_length), noise=$(noise)")
-
-    for beta_function = [beta_exp, beta_mixed, beta_rational]
+    for location in BASELINE_LOCATIONS, beta_function = [beta_exp, beta_mixed, beta_rational]
         r = noise == 0 ? Inf : 1 / noise^2
+
+        # Only fit a baseline where there's a UDE run to compare it against
+        ude_sim_name = "UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_traindata=$(train_length)_noise=$(noise)"
+        isdir(datadir("exp_pro", "sims", "ude_single", ude_sim_name, "synthetic_$(location)")) || continue
 
         model_name = "baseline_single"
         sim_name = "baseline_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_traindata=$(train_length)_noise=$(noise)"
+        println("Running simulation for location: $(location), beta=$(beta_function), train_length=$(train_length), noise=$(noise)")
 
         loc_foldername = "synthetic_$(location)"
         data_dir = datadir("exp_pro", "sims", model_name, sim_name, loc_foldername)
