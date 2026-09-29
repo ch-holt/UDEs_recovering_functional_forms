@@ -141,8 +141,8 @@ final_activation_function = softplus
 number_of_nn_inputs = 1
 adam_learning_rate = 1e-3
 
-maxiters_adam = 2
-maxiters_lbfgs = 2
+maxiters_adam = 2500
+maxiters_lbfgs = 2000
 
 const r = noise == 0 ? Inf : 1 / noise^2
 
