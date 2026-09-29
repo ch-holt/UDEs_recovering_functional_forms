@@ -46,6 +46,7 @@ Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 
 [compat]
 Distributions = "0.25.130"
+DrWatson = "2.19.1"
 FileIO = "1.20.0"
 ForecastBaselines = "0.1.0"
 ForwardDiff = "1.4.5"

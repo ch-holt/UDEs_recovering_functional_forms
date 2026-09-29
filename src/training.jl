@@ -21,7 +21,7 @@ function train_baseline_single_dataset(p, predict_ude, training_data, u0, noise,
     for iter in 1:maxiters_adam
 
         train_l, back_all = pullback(theta -> loss_ude(theta, predict_ude, training_data, u0, tpts, noise, r), p)
-        println("Iteration $iter, Loss: $train_l")
+        iter % 50 == 0 && println("Iteration $iter, Loss: $train_l")
         grad = back_all((one(train_l)))[1]
 
         # Stop training if 5 consecutive Inf losses
@@ -152,7 +152,7 @@ function train_ude_single_dataset(p, predict_ude, training_data, u0, beta_functi
 
         # Compute the loss, predicted mortalities and gradient function
         train_l, back_all = pullback(theta -> loss_ude(theta, predict_ude, training_data, u0, train_tpts, noise, r) + regularisation(theta.nn_params), p)
-        println("Iteration $iter, Loss: $train_l")
+        iter % 50 == 0 && println("Iteration $iter, Loss: $train_l")
         # Evaluate the gradient of the loss w.r.t p
         grad = back_all((one(train_l)))[1]
 
