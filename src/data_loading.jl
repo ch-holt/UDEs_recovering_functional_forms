@@ -3,7 +3,7 @@ FUNCTION TO LOAD TRAJECTORIES BASED ON LOCATION AND BETA FUNCTION
 ==============================================================# 
 
 function load_trajectories(locations, beta_function, noise)
-    root = datadir("exp_pro","synthetic_data","synthetic_trajectories_RB_$(beta_function)")
+    root = datadir("exp_pro","synthetic_data","synthetic_trajectories_HQ_$(beta_function)")
     trajectories = []
     for location in locations
         filename = "synthetic_$(location)"

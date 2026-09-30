@@ -30,7 +30,7 @@ function generate_ground_truth_beta(beta_functions)
         for location in keys(POPULATION)
             println("Generating synthetic trajectories for $(location)")
             beta_name = string(beta_function)
-            dataset = JLD2.load(datadir("exp_pro", "synthetic_data", "synthetic_trajectories_RB_$(beta_name)", "synthetic_$(location)", "noise=0.0.jld2"))
+            dataset = JLD2.load(datadir("exp_pro", "synthetic_data", "synthetic_trajectories_HQ_$(beta_name)", "synthetic_$(location)", "noise=0.0.jld2"))
 
             # Extract infectious individuals and days from the dataset
             obs = dataset["infectious"]
@@ -58,13 +58,13 @@ function generate_ground_truth_beta(beta_functions)
             # Save the generated beta trajectory to a JLD2 file
             beta_name = string(beta_function)
 
-            mkpath(datadir("exp_pro", "synthetic_data","synthetic_beta_trajectories_RB", "ground_truth_$(beta_name)", "location_$(location)"))
-            save(datadir("exp_pro", "synthetic_data","synthetic_beta_trajectories_RB", "ground_truth_$(beta_name)", "location_$(location)","synthetic_$(beta_name)_$(location)_over_time.jld2"), "beta", generated_beta_over_time, "days", dataset["days"])
-            save(datadir("exp_pro", "synthetic_data","synthetic_beta_trajectories_RB", "ground_truth_$(beta_name)", "location_$(location)","synthetic_$(beta_name)_$(location)_between_0_1.jld2"), "beta", generated_beta_between_0_1, "x_hat", x_hat)
+            mkpath(datadir("exp_pro", "synthetic_data","synthetic_beta_trajectories_HQ", "ground_truth_$(beta_name)", "location_$(location)"))
+            save(datadir("exp_pro", "synthetic_data","synthetic_beta_trajectories_HQ", "ground_truth_$(beta_name)", "location_$(location)","synthetic_$(beta_name)_$(location)_over_time.jld2"), "beta", generated_beta_over_time, "days", dataset["days"])
+            save(datadir("exp_pro", "synthetic_data","synthetic_beta_trajectories_HQ", "ground_truth_$(beta_name)", "location_$(location)","synthetic_$(beta_name)_$(location)_between_0_1.jld2"), "beta", generated_beta_between_0_1, "x_hat", x_hat)
 
 
             # Plot the generated beta trajectory over time
-            plot_dir_over_time = plotsdir("synthetic_data","synthetic_beta_trajectories_RB", "ground_truth_$(beta_name)", "location_$(location)")
+            plot_dir_over_time = plotsdir("synthetic_data","synthetic_beta_trajectories_HQ", "ground_truth_$(beta_name)", "location_$(location)")
             mkpath(plot_dir_over_time)
             plot_filename = joinpath(plot_dir_over_time, "synthetic_$(beta_name)_$(location)_over_time.png")
             plot(dataset["days"], generated_beta_over_time, label="Generated Beta", xlabel="Days", ylabel="Beta", title="Generated Beta for $(location)\n$(beta_eqn) I)", legend=:topright)
@@ -72,7 +72,7 @@ function generate_ground_truth_beta(beta_functions)
             savefig(plot_filename)
 
             # Plot the generated beta trajectory against x_hat
-            plot_dir_between_0_1 = plotsdir("synthetic_data","synthetic_beta_trajectories_RB", "ground_truth_$(beta_name)", "location_$(location)")
+            plot_dir_between_0_1 = plotsdir("synthetic_data","synthetic_beta_trajectories_HQ", "ground_truth_$(beta_name)", "location_$(location)")
             mkpath(plot_dir_between_0_1)
             plot_filename_xhat = joinpath(plot_dir_between_0_1, "synthetic_$(beta_name)_$(location)_between_0_1.png")
             plot(x_hat, generated_beta_between_0_1, label="Generated Beta", xlabel="I/N", ylabel="Beta", title="Generated Beta Trajectory for $(location) between 0 and 1 \n$(beta_eqn) I/N)", legend=:topright)
@@ -99,7 +99,7 @@ function generate_synthetic_data(fixed_p, varying_p, obs_length, location, beta_
 
     # Save the result
     beta_name = string(beta_function)
-	mkpath(datadir("exp_pro","synthetic_data","synthetic_trajectories_RB_$(beta_name)", "synthetic_$(location)"))
+	mkpath(datadir("exp_pro","synthetic_data","synthetic_trajectories_HQ_$(beta_name)", "synthetic_$(location)"))
 
     
     println("Adding noise to the infectious trajectory for $(location)")
@@ -107,7 +107,7 @@ function generate_synthetic_data(fixed_p, varying_p, obs_length, location, beta_
     for noise in noise_levels
         noisy_i_traj, r = add_neg_bin_noise(i_traj, noise)
         fname_noisy = "noise=$(noise).jld2"
-        save(datadir("exp_pro","synthetic_data","synthetic_trajectories_RB_$(beta_name)", "synthetic_$(location)", fname_noisy),
+        save(datadir("exp_pro","synthetic_data","synthetic_trajectories_HQ_$(beta_name)", "synthetic_$(location)", fname_noisy),
             "fixed_p", fixed_p, "varying_p", varying_p, "days", 1:obs_length,
             "susceptible", s_traj, "exposed", e_traj, "infectious", noisy_i_traj, "r", r, "recovered", r_traj, "deaths", d_traj)
     println("Finished generating synthetic data for $(fname_noisy)")

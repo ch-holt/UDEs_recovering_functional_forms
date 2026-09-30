@@ -90,7 +90,7 @@ for train_length in [365]
             population = POPULATION[location]
 
             # Load the observed data
-            data = JLD2.load(DrWatson.datadir("exp_pro","synthetic_data","synthetic_trajectories_RB_$(beta_function)", "synthetic_$(location)", "noise=$(noise).jld2"))
+            data = JLD2.load(DrWatson.datadir("exp_pro","synthetic_data","synthetic_trajectories_HQ_$(beta_function)", "synthetic_$(location)", "noise=$(noise).jld2"))
 
             # Just use infectious trajectory
             obs = data["infectious"]

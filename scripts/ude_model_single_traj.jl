@@ -23,7 +23,7 @@ using UDE_FUNCTIONAL_FORMS
 MAIN FUNCTION TO TRAIN THE UDE AND SAVE THE RESULTS
 =========================================================# 
 
-function run_model(sim_name, beta_function, location, data, true_data, train_length, u0, seed, predict_ude, beta_network, prob_ude, noise, r; maxiters_adam, maxiters_lbfgs, adam_learning_rate, number_of_nn_inputs=1, model_name, days, delta, population)
+function run_model(sim_name, beta_function, location, data, true_data, train_length, u0, seed, predict_ude, beta_network, prob_ude, noise, r, solver; maxiters_adam, maxiters_lbfgs, adam_learning_rate, number_of_nn_inputs=1, model_name, days, delta, population)
     println("Starting run: on thread $(Threads.threadid())")
     t_start = time()
     rng = Random.seed!(seed)
@@ -46,7 +46,7 @@ function run_model(sim_name, beta_function, location, data, true_data, train_len
 
     # Evaluate final long term results 
     long_term_prob= remake(prob_ude, p = p_trained, tspan = (1.0, 3*365.0), u0 = u0)
-    long_term_pred = solve(long_term_prob, Rosenbrock23(), saveat=1, dense = false)
+    long_term_pred = solve(long_term_prob, solver, saveat=1, dense = false)
 
     # Convert to a 1 x N matrix
     x_hat = long_term_pred[3, 1:length(data)]
@@ -107,9 +107,16 @@ const beta_function= BETA_FUNCTIONS[get(ARGS, 1, "beta_exp")]
 const noise = parse(Float64, get(ARGS, 2, "0.0"))
 # Number of data points used for training - default 365
 const train_length = parse(Int, get(ARGS, 3, "365"))
+# UDE training/prediction solver - default rosenbrock23. Ground truth is
+# always generated with a fixed, separate high-precision solver (see
+# run_seird_functional_form in src/ode_model.jl) regardless of this choice
+# — this only controls the solver used while training/evaluating the UDE.
+const SOLVERS = Dict("rosenbrock23" => Rosenbrock23(), "vern7" => Vern7(), "autotsit5" => AutoTsit5(Rosenbrock23()))
+const solver_name = get(ARGS, 4, "rosenbrock23")
+const solver = SOLVERS[solver_name]
 
 # print settings
-println("Settings: beta=$(beta_function), noise=$(noise), train_length=$(train_length)")
+println("Settings: beta=$(beta_function), noise=$(noise), train_length=$(train_length), solver=$(solver_name)")
 
 # Define the timespan for the ODE solver
 tspan = [1, train_length]
@@ -147,7 +154,7 @@ maxiters_lbfgs = 2000
 const r = noise == 0 ? Inf : 1 / noise^2
 
 model_name = "ude_single"
-sim_name = "500initialisations_rosenbrock23_UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_traindata=$(train_length)_noise=$(noise)"
+sim_name = "$(solver_name)_UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_traindata=$(train_length)_noise=$(noise)"
 
 if !isdir(datadir("exp_pro","sims", model_name, sim_name))
     mkpath(datadir("exp_pro","sims", model_name, sim_name))
@@ -163,8 +170,8 @@ println("Running simulation for location: $(location)")
 LOAD DATA
 =========================================================#
 
-dataset = JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_RB_$(beta_function)", "synthetic_$(location)", "noise=$(noise).jld2"))
-true_dataset = noise == 0 ? dataset : JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_RB_$(beta_function)", "synthetic_$(location)", "noise=0.0.jld2"))
+dataset = JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_HQ_$(beta_function)", "synthetic_$(location)", "noise=$(noise).jld2"))
+true_dataset = noise == 0 ? dataset : JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_HQ_$(beta_function)", "synthetic_$(location)", "noise=0.0.jld2"))
 
 data = dataset["infectious"]
 true_data = true_dataset["infectious"]
@@ -185,7 +192,7 @@ S0 = population - E0 - I0 - R0_recovered - D0
 u0 = [S0, E0, I0, R0_recovered, D0]
 
 # run the model on multiple threads
-Threads.@threads for i = 1:500
+Threads.@threads for i = 1:100
     # Resume support: skip a seed whose results already exist, so a rerun (e.g. after
     # a timeout or crash) only computes the seeds still missing instead of starting
     # over from seed 1.
@@ -203,9 +210,9 @@ Threads.@threads for i = 1:500
 
         local seird_nn! = make_seird_nn(beta_network, st_nn, sigma, gamma, delta, population, input_size)
         local prob_ude = ODEProblem(seird_nn!, u0, tspan, p_nn_temp)
-        local predict_ude = make_predict_ude(prob_ude, train_length)
+        local predict_ude = make_predict_ude(prob_ude, train_length, solver)
 
-        run_model(sim_name, beta_function, location, data, true_data, train_length, u0, i, predict_ude, beta_network, prob_ude, noise, r;
+        run_model(sim_name, beta_function, location, data, true_data, train_length, u0, i, predict_ude, beta_network, prob_ude, noise, r, solver;
             maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs,
             number_of_nn_inputs=number_of_nn_inputs, adam_learning_rate=adam_learning_rate,
             model_name=model_name, days=days, delta=delta, population=population)

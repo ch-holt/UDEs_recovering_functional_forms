@@ -61,7 +61,7 @@ function run_model(locations, beta_function, beta_network; maxiters_adam, maxite
     for location in locations
         filename = "synthetic_$(location)"
         # Extract trajectory of infectious individuals
-        dataset = JLD2.load(datadir("exp_pro","synthetic_data", "synthetic_trajectories_RB_beta_exp", filename, "noise=$(noise).jld2"))
+        dataset = JLD2.load(datadir("exp_pro","synthetic_data", "synthetic_trajectories_HQ_beta_exp", filename, "noise=$(noise).jld2"))
         data = dataset["infectious"]
         days = dataset["days"]
 
@@ -229,7 +229,7 @@ beta_network, p_nn_temp, st_nn = build_neural_network(rng, hidden_dims, input_si
 
 seird_nn! = make_seird_nn(beta_network, st_nn, sigma, gamma, input_size)
 prob_ude = ODEProblem(seird_nn!, u0, tspan, p_nn_temp)
-predict_ude = make_predict_ude(prob_ude, train_length)
+predict_ude = make_predict_ude(prob_ude, train_length, Tsit5())
 
 #========================================================
 DEFINE HYPERPARAMETERS

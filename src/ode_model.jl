@@ -84,8 +84,11 @@ function run_seird_functional_form(beta_function, location, fixed_p, varying_p, 
 
     seird_functional! = make_seird_functional(beta_function, location, sigma, gamma)
     prob = ODEProblem(seird_functional!, u0, tspan, p)
-    sol = solve(prob, Rosenbrock23(), saveat=1.0, dense=false)
-    
+    # Fixed, high-precision ground truth — shared by every solver arm being
+    # compared, so the comparison is "which solver best recovers the same
+    # dynamics", not "which solver best recovers its own synthetic realisation".
+    sol = solve(prob, Vern7(), saveat=1.0, dense=false, abstol=1e-12, reltol=1e-12)
+
     return sol
 end
 
@@ -132,10 +135,10 @@ end
 MAKE PREDICTION USING UDE MODEL
 =========================================================# 
 
-function make_predict_ude(prob, train_length)
+function make_predict_ude(prob, train_length, solver)
     function predict_ude(p_all, u0)
         new_prob = remake(prob, p = p_all, u0 = u0)
-        sol = solve(new_prob, Rosenbrock23(), saveat=1.0, dense=false)
+        sol = solve(new_prob, solver, saveat=1.0, dense=false)
         if sol.retcode != ReturnCode.Success || length(sol.t) < train_length
             return nothing
         end

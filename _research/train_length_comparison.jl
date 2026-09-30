@@ -61,7 +61,7 @@ beta_network, _, st_nn = build_neural_network(rng, hidden_dims, input_size, 1,
                                                activation_fn, final_activation_fn)
 population = POPULATION[location]
 
-dataset = JLD2.load(datadir("exp_pro", "synthetic_data", "synthetic_trajectories_RB_$(beta_func_name)",
+dataset = JLD2.load(datadir("exp_pro", "synthetic_data", "synthetic_trajectories_HQ_$(beta_func_name)",
                              "synthetic_$(location)", "noise=$(noise).jld2"))
 true_inf = dataset["infectious"]
 days     = collect(dataset["days"])
