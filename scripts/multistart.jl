@@ -64,7 +64,7 @@ end
 # Discover every sim folder that actually exists on disk, rather than hardcoding
 # beta/train_length/noise/location combinations
 const BETA_FUNCTIONS = Dict("beta_exp" => beta_exp, "beta_rational" => beta_rational, "beta_mixed" => beta_mixed)
-const SIM_NAME_RE = r"^UDE_single_beta=(?<beta>[a-zA-Z_]+)_adam=(?<adam>\d+)_lbfgs=(?<lbfgs>\d+)_traindata=(?<traindata>\d+)_noise=(?<noise>[\d.]+)$"
+const SIM_NAME_RE = r"^(?<prefix>.*?)UDE_single_beta=(?<beta>[a-zA-Z_]+)_adam=(?<adam>\d+)_lbfgs=(?<lbfgs>\d+)_traindata=(?<traindata>\d+)_noise=(?<noise>[\d.]+)$"
 
 sims_root = datadir("exp_pro", "sims", "ude_single")
 feasibility_rows = []
