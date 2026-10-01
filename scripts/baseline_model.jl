@@ -37,13 +37,12 @@ const TRAIN_LENGTHS = [7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84, 91, 100, 1
 
 # Baseline is a fixed, arm-independent reference (a single constant-beta fit
 # per location/beta-form/train_length/noise), shared by every solver arm
-# being compared. Rosenbrock23 (implicit, handles stiffness natively) —
-# not tied to the ground truth's Vern7, which has no reason to apply here:
-# baseline is a 1-parameter fit, not a precision-sensitive computation, and
-# Vern7 (no stiffness handling) was observed taking 35+ hours for what
-# should be a fast fit, almost certainly from tiny adaptive steps forced by
-# stiffness in the SEIRD system that Rosenbrock23 handles without issue.
-const BASELINE_SOLVER = Rosenbrock23()
+# being compared. Tsit5 — the original solver baseline was always fit with
+# (proven fast: ~2s/location locally, vs. Vern7's 35+ hour estimate on the
+# HPC), refit here against the new synthetic_trajectories_HQ_ ground truth
+# so baseline's fit target matches what every arm is actually scored
+# against (the pre-existing local baseline predates even the _RB_ data).
+const BASELINE_SOLVER = Tsit5()
 
 # Every location is tried, but a baseline is only fitted where the matching
 # UDE run exists on disk (see the skip at the top of the location loop).
