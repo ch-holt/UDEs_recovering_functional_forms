@@ -23,7 +23,7 @@ using UDE_FUNCTIONAL_FORMS
 MAIN FUNCTION TO TRAIN THE UDE AND SAVE THE RESULTS
 =========================================================# 
 
-function run_model(sim_name, beta_function, location, data, true_data, train_length, u0, seed, predict_ude, beta_network, prob_ude, noise, r, solver; maxiters_adam, maxiters_lbfgs, adam_learning_rate, number_of_nn_inputs=1, model_name, days, delta, population)
+function run_model(sim_name, beta_function, location, data, true_data, train_length, u0, seed, predict_ude, beta_network, prob_ude, noise, r, solver; maxiters_adam, maxiters_lbfgs, adam_learning_rate, number_of_nn_inputs=1, model_name, days, delta, population, reltol=nothing)
     println("Starting run: on thread $(Threads.threadid())")
     t_start = time()
     rng = Random.seed!(seed)
@@ -44,9 +44,10 @@ function run_model(sim_name, beta_function, location, data, true_data, train_len
 
     foldername = "simulation_seed=$(seed)"
 
-    # Evaluate final long term results 
+    # Evaluate final long term results
     long_term_prob= remake(prob_ude, p = p_trained, tspan = (1.0, 3*365.0), u0 = u0)
-    long_term_pred = solve(long_term_prob, solver, saveat=1, dense = false)
+    long_term_pred = isnothing(reltol) ? solve(long_term_prob, solver, saveat=1, dense = false) :
+                                          solve(long_term_prob, solver, saveat=1, dense = false, reltol=reltol)
 
     # Convert to a 1 x N matrix
     x_hat = long_term_pred[3, 1:length(data)]
@@ -111,12 +112,28 @@ const train_length = parse(Int, get(ARGS, 3, "365"))
 # always generated with a fixed, separate high-precision solver (see
 # run_seird_functional_form in src/ode_model.jl) regardless of this choice
 # — this only controls the solver used while training/evaluating the UDE.
-const SOLVERS = Dict("rosenbrock23" => Rosenbrock23(), "vern7" => Vern7(), "autotsit5" => AutoTsit5(Rosenbrock23()), "tsit5" => Tsit5())
+# Each entry is (solver, reltol_override) — reltol=nothing means use the
+# solver's own default (1e-3 for Tsit5/Vern7/the Rosenbrock23 fallback of
+# AutoTsit5). The _rtol<x> entries are the tolerance-sensitivity sweep
+# (reltol=1e-3, the default, is already covered by the plain tsit5/
+# autotsit5 entries, so it isn't repeated here).
+const SOLVER_CONFIGS = Dict(
+    "rosenbrock23"       => (Rosenbrock23(),               nothing),
+    "vern7"              => (Vern7(),                      nothing),
+    "autotsit5"          => (AutoTsit5(Rosenbrock23()),     nothing),
+    "tsit5"              => (Tsit5(),                      nothing),
+    "tsit5_rtol1e-5"     => (Tsit5(),                      1e-5),
+    "tsit5_rtol1e-6"     => (Tsit5(),                      1e-6),
+    "tsit5_rtol1e-10"    => (Tsit5(),                      1e-10),
+    "autotsit5_rtol1e-5"  => (AutoTsit5(Rosenbrock23()),    1e-5),
+    "autotsit5_rtol1e-6"  => (AutoTsit5(Rosenbrock23()),    1e-6),
+    "autotsit5_rtol1e-10" => (AutoTsit5(Rosenbrock23()),    1e-10),
+)
 const solver_name = get(ARGS, 4, "rosenbrock23")
-const solver = SOLVERS[solver_name]
+const solver, reltol_override = SOLVER_CONFIGS[solver_name]
 
 # print settings
-println("Settings: beta=$(beta_function), noise=$(noise), train_length=$(train_length), solver=$(solver_name)")
+println("Settings: beta=$(beta_function), noise=$(noise), train_length=$(train_length), solver=$(solver_name), reltol=$(something(reltol_override, "default"))")
 
 # Define the timespan for the ODE solver
 tspan = [1, train_length]
@@ -210,12 +227,12 @@ Threads.@threads for i = 1:100
 
         local seird_nn! = make_seird_nn(beta_network, st_nn, sigma, gamma, delta, population, input_size)
         local prob_ude = ODEProblem(seird_nn!, u0, tspan, p_nn_temp)
-        local predict_ude = make_predict_ude(prob_ude, train_length, solver)
+        local predict_ude = make_predict_ude(prob_ude, train_length, solver; reltol=reltol_override)
 
         run_model(sim_name, beta_function, location, data, true_data, train_length, u0, i, predict_ude, beta_network, prob_ude, noise, r, solver;
             maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs,
             number_of_nn_inputs=number_of_nn_inputs, adam_learning_rate=adam_learning_rate,
-            model_name=model_name, days=days, delta=delta, population=population)
+            model_name=model_name, days=days, delta=delta, population=population, reltol=reltol_override)
     catch e
         println("Error occurred for seed $(i): $e")
     end
