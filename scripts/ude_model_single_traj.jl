@@ -111,7 +111,7 @@ const train_length = parse(Int, get(ARGS, 3, "365"))
 # always generated with a fixed, separate high-precision solver (see
 # run_seird_functional_form in src/ode_model.jl) regardless of this choice
 # — this only controls the solver used while training/evaluating the UDE.
-const SOLVERS = Dict("rosenbrock23" => Rosenbrock23(), "vern7" => Vern7(), "autotsit5" => AutoTsit5(Rosenbrock23()))
+const SOLVERS = Dict("rosenbrock23" => Rosenbrock23(), "vern7" => Vern7(), "autotsit5" => AutoTsit5(Rosenbrock23()), "tsit5" => Tsit5())
 const solver_name = get(ARGS, 4, "rosenbrock23")
 const solver = SOLVERS[solver_name]
 
