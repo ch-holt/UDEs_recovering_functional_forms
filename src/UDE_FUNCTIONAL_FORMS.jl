@@ -20,6 +20,7 @@ using Statistics
 using Random
 using Distributions
 using ForwardDiff
+using SpecialFunctions
 
 const _ground_truth = JLD2.load(datadir("exp_raw", "estimated_ground_truth_parameters.jld2"))
 const POPULATION = _ground_truth["POPULATION"]

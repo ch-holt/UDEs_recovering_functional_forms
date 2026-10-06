@@ -12,12 +12,11 @@ function loss_nmse(pred, data)
 end
 
 # Negative binomial loss
-# Assuming pred is the mean of the negative binomial distribution and data is the observations
+# Assuming pred is the mean of the negative binomial distribution, r is the dispersion parameter, and data is the observations
 function loss_negbin(pred, data, r)
     # ensure prediction is positive
     pred = max.(pred, eps())
-    # This sum is already the NLL (dropping the pred-independent combinatorial/r terms) - do not negate it again
-    nll = sum((data .+ r) .* log.(r .+ pred) .- data .* log.(pred))
+    nll = sum((data .+ r) .* log.(r .+ pred) .- data .* log.(pred) .+ loggamma.(r) .- loggamma.(data .+ r) .- r.*log.(r))
     return nll
 end
 
@@ -37,7 +36,9 @@ function loss_ude(p_all, predict_ude, data, u0, tpts, noise, r)
         nmse = loss_nmse(pred[tpts], data[tpts])
     else
         # Negative binomial loss on the requested time points
-        nmse = loss_negbin(pred[tpts], data[tpts], r)
+        # we enforce and upper and lower bound on the dispersion parameter to avoid numerical issues
+        r_used = hasproperty(p_all, :log_phi) ? clamp(exp(-2 * p_all.log_phi), 1e-2, 1e6) : r
+        nmse = loss_negbin(pred[tpts], data[tpts], r_used)
     end
     return nmse
 

@@ -33,6 +33,8 @@ function summarise_results(sim_name_dir::String, population::Real)
         loss_I_grid     = get(data, "loss_I_grid",     missing)
         val_losses      = get(data, "val_losses",      missing)
         best_val_loss = ismissing(val_losses) ? missing : minimum(val_losses)
+        # Jointly estimated noise level (missing for noise=0 and for fixed-r runs)
+        phi_hat         = get(data, "phi_hat",         missing)
 
         # "prediction" is the long-term solve (3 years, row 3 = infectious compartment);
         # check feasibility over the full saved horizon.
@@ -48,6 +50,7 @@ function summarise_results(sim_name_dir::String, population::Real)
             nmse_beta       = loss_beta,
             nmse_I_grid     = loss_I_grid,
             best_val_loss   = best_val_loss,
+            phi_hat         = phi_hat,
             max_forecast    = max_forecast,
             feasible        = feasible,
         ))
@@ -64,7 +67,7 @@ end
 # Discover every sim folder that actually exists on disk, rather than hardcoding
 # beta/train_length/noise/location combinations
 const BETA_FUNCTIONS = Dict("beta_exp" => beta_exp, "beta_rational" => beta_rational, "beta_mixed" => beta_mixed)
-const SIM_NAME_RE = r"^(?<prefix>.*?)UDE_single_beta=(?<beta>[a-zA-Z_]+)_adam=(?<adam>\d+)_lbfgs=(?<lbfgs>\d+)_traindata=(?<traindata>\d+)_noise=(?<noise>[\d.]+)$"
+const SIM_NAME_RE = r"^(?<prefix>.*?)UDE_single_beta=(?<beta>[a-zA-Z_]+)_adam=(?<adam>\d+)_lbfgs=(?<lbfgs>\d+)_traindata=(?<traindata>\d+)_noise=(?<noise>[\d.]+)(?<estphi>_estphi)?$"
 
 sims_root = datadir("exp_pro", "sims", "ude_single")
 feasibility_rows = []

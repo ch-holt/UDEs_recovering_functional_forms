@@ -32,13 +32,21 @@ function run_model(sim_name, beta_function, location, data, true_data, train_len
     p, st = Lux.setup(rng, beta_network)
     p = ComponentArray(p)
     p = Float64.(p)
+    phi_init = 0.17
 
     # Combine all parameters into a single object for optimisation
-    p_init = ComponentArray(nn_params = p)
+    # If we are doing the noise experiments e.g. when noise>0, we also want to jointly estimate the noise parameter phi
+    # here, r=1/phi^2 - so we can compare the estimate noise with the noise level input
+    # do on the log scale to ensure positivity
+    p_init = noise == 0 ? ComponentArray(nn_params = p) :
+                        ComponentArray(nn_params = p, log_phi = log(phi_init))
 
     training_data = data[1:train_length]
 
     p_trained, train_losses_final, val_losses_final = train_ude_single_dataset(p_init, predict_ude, training_data, u0, beta_function, location, noise, r; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, adam_learning_rate=adam_learning_rate)
+
+    # Recover the jointly estimated noise level (only estimated when noise>0)
+    phi_hat = noise == 0 ? missing : exp(p_trained.log_phi)
 
     loc_foldername = "synthetic_$(location)"
 
@@ -89,7 +97,8 @@ function run_model(sim_name, beta_function, location, data, true_data, train_len
 	JLD2.save(datadir("exp_pro","sims", model_name, sim_name, loc_foldername, foldername, "results.jld2"),
 		"location", location, "population", population, "p", p_trained, "train_losses", train_losses_final, "val_losses", val_losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_traj,
 		"days", days, "seed", seed, "noise", noise, "loss_traj_noisy", loss_traj_noisy, "loss_traj_true", loss_traj_true, "loss_beta", loss_beta, "loss_I_grid", loss_I_grid,
-        "loss_I_train", loss_I_train, "y_hat", y_hat, "y_hat_train", y_hat_train, "elapsed_seconds", elapsed)
+        "loss_I_train", loss_I_train, "y_hat", y_hat, "y_hat_train", y_hat_train,
+        "phi_init", phi_init, "phi_hat", phi_hat, "elapsed_seconds", elapsed)
 
 	println("Finished run: $(location) on thread $(Threads.threadid())")
 
@@ -171,7 +180,7 @@ maxiters_lbfgs = 2000
 const r = noise == 0 ? Inf : 1 / noise^2
 
 model_name = "ude_single"
-sim_name = "$(solver_name)_UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_traindata=$(train_length)_noise=$(noise)"
+sim_name = "$(solver_name)_UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_traindata=$(train_length)_noise=$(noise)$(noise == 0 ? "" : "_estphi")"
 
 if !isdir(datadir("exp_pro","sims", model_name, sim_name))
     mkpath(datadir("exp_pro","sims", model_name, sim_name))
