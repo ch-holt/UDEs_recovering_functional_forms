@@ -114,7 +114,7 @@ DEFINE HYPERPARAMETERS
 const BETA_FUNCTIONS = Dict("beta_exp" => beta_exp, "beta_rational" => beta_rational, "beta_mixed" => beta_mixed)
 const beta_function= BETA_FUNCTIONS[get(ARGS, 1, "beta_exp")]
 # get noise - default 0
-const noise = parse(Float64, get(ARGS, 2, "0.0"))
+const noise = parse(Float64, get(ARGS, 2, "0.1"))
 # Number of data points used for training - default 365
 const train_length = parse(Int, get(ARGS, 3, "365"))
 # UDE training/prediction solver - default rosenbrock23. Ground truth is
@@ -138,7 +138,7 @@ const SOLVER_CONFIGS = Dict(
     "autotsit5_rtol1e-6"  => (AutoTsit5(Rosenbrock23()),    1e-6),
     "autotsit5_rtol1e-10" => (AutoTsit5(Rosenbrock23()),    1e-10),
 )
-const solver_name = get(ARGS, 4, "rosenbrock23")
+const solver_name = get(ARGS, 4, "autotsit5")
 const solver, reltol_override = SOLVER_CONFIGS[solver_name]
 
 # print settings
@@ -180,7 +180,7 @@ maxiters_lbfgs = 2000
 const r = noise == 0 ? Inf : 1 / noise^2
 
 model_name = "ude_single"
-sim_name = "$(solver_name)_UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_traindata=$(train_length)_noise=$(noise)$(noise == 0 ? "" : "_estphi")"
+sim_name = "$(solver_name)_UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_traindata=$(train_length)_noise=$(noise)$(noise == 0 ? "" : "_estphi_noclamp")"
 
 if !isdir(datadir("exp_pro","sims", model_name, sim_name))
     mkpath(datadir("exp_pro","sims", model_name, sim_name))
