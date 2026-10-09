@@ -24,7 +24,7 @@ using UDE_FUNCTIONAL_FORMS
 MAIN FUNCTION TO TRAIN THE UDE AND SAVE THE RESULTS
 =========================================================# 
 
-function run_model(sim_name, beta_function, location, data, true_data, train_length, u0, seed, predict_ude, beta_network, prob_ude, noise, r, solver; maxiters_adam, maxiters_lbfgs, adam_learning_rate, number_of_nn_inputs=1, model_name, days, delta, population, reltol=nothing)
+function run_model(sim_name, beta_function, location, data, true_data, train_length, u0, seed, predict_ude, beta_network, prob_ude, noise, r, solver; maxiters_adam, maxiters_lbfgs, adam_learning_rate, number_of_nn_inputs=1, model_name, days, delta, population, reltol=nothing, loss_variant="bounded")
     println("Starting run: on thread $(Threads.threadid())")
     t_start = time()
     rng = Random.seed!(seed)
@@ -46,11 +46,13 @@ function run_model(sim_name, beta_function, location, data, true_data, train_len
 
     training_data = data[1:train_length]
 
-    p_trained, train_losses_final, val_losses_final = train_ude_single_dataset(p_init, predict_ude, training_data, u0, beta_function, location, noise, r; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, adam_learning_rate=adam_learning_rate)
+    p_trained, train_losses_final, val_losses_final = train_ude_single_dataset(p_init, predict_ude, training_data, u0, beta_function, location, noise, r; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, adam_learning_rate=adam_learning_rate, loss_variant=loss_variant)
 
     # Recover the jointly estimated noise level (only estimated when noise>0),
-    # including the 1e-3 floor so it matches the phi used in loss_ude
-    phi_hat = noise == 0 ? missing : exp(p_trained.log_phi) + 1e-3
+    # as the phi the likelihood actually used (includes the 1e-3 floor for "bounded")
+    phi_hat = noise == 0 ? missing : phi_effective(p_trained.log_phi, loss_variant)
+    # poisson_switch only: whether the final r is in the Poisson regime (then phi_hat is not identified)
+    poisson_regime = (noise != 0 && loss_variant == "poisson_switch") ? exp(-2 * p_trained.log_phi) >= POISSON_SWITCH_R : missing
 
     loc_foldername = "synthetic_$(location)"
 
@@ -102,7 +104,8 @@ function run_model(sim_name, beta_function, location, data, true_data, train_len
 		"location", location, "population", population, "p", p_trained, "train_losses", train_losses_final, "val_losses", val_losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_traj,
 		"days", days, "seed", seed, "noise", noise, "loss_traj_noisy", loss_traj_noisy, "loss_traj_true", loss_traj_true, "loss_beta", loss_beta, "loss_I_grid", loss_I_grid,
         "loss_I_train", loss_I_train, "y_hat", y_hat, "y_hat_train", y_hat_train,
-        "phi_init", phi_init, "phi_hat", phi_hat, "elapsed_seconds", elapsed)
+        "phi_init", phi_init, "phi_hat", phi_hat, "loss_variant", loss_variant, "poisson_regime", poisson_regime,
+        "elapsed_seconds", elapsed)
 
 	println("Finished run: $(location) on thread $(Threads.threadid())")
 
@@ -144,9 +147,14 @@ const SOLVER_CONFIGS = Dict(
 )
 const solver_name = get(ARGS, 4, "autotsit5")
 const solver, reltol_override = SOLVER_CONFIGS[solver_name]
+# How phi is mapped to r in the NB loss for the noise experiments (see LOSS_VARIANTS in src/loss.jl) - default bounded
+const loss_variant = get(ARGS, 5, "bounded")
+loss_variant in LOSS_VARIANTS || error("Unknown loss_variant $(loss_variant); expected one of $(LOSS_VARIANTS)")
+const ESTPHI_SUFFIX = Dict("bounded" => "_estphi_randinit_bounded", "bigfloat" => "_estphi_randinit_bigfloat",
+                           "poisson_switch" => "_estphi_randinit_poissonswitch")
 
 # print settings
-println("Settings: beta=$(beta_function), noise=$(noise), train_length=$(train_length), solver=$(solver_name), reltol=$(something(reltol_override, "default"))")
+println("Settings: beta=$(beta_function), noise=$(noise), train_length=$(train_length), solver=$(solver_name), reltol=$(something(reltol_override, "default")), loss_variant=$(loss_variant)")
 
 # Define the timespan for the ODE solver
 tspan = [1, train_length]
@@ -184,7 +192,7 @@ maxiters_lbfgs = 2000
 const r = noise == 0 ? Inf : 1 / noise^2
 
 model_name = "ude_single"
-sim_name = "$(solver_name)_UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_traindata=$(train_length)_noise=$(noise)$(noise == 0 ? "" : "_estphi_randinit_bounded")"
+sim_name = "$(solver_name)_UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_traindata=$(train_length)_noise=$(noise)$(noise == 0 ? "" : ESTPHI_SUFFIX[loss_variant])"
 
 if !isdir(datadir("exp_pro","sims", model_name, sim_name))
     mkpath(datadir("exp_pro","sims", model_name, sim_name))
@@ -245,7 +253,7 @@ Threads.@threads for i = 1:100
         run_model(sim_name, beta_function, location, data, true_data, train_length, u0, i, predict_ude, beta_network, prob_ude, noise, r, solver;
             maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs,
             number_of_nn_inputs=number_of_nn_inputs, adam_learning_rate=adam_learning_rate,
-            model_name=model_name, days=days, delta=delta, population=population, reltol=reltol_override)
+            model_name=model_name, days=days, delta=delta, population=population, reltol=reltol_override, loss_variant=loss_variant)
     catch e
         println("Error occurred for seed $(i): $e")
     end

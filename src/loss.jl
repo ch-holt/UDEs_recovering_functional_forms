@@ -20,11 +20,45 @@ function loss_negbin(pred, data, r)
     return nll
 end
 
+# Poisson negative log-likelihood, dropping the constant sum(log k!) as loss_negbin does,
+# so it is the r -> infinity limit of loss_negbin
+function loss_poisson(pred, data)
+    pred = max.(pred, eps())
+    return sum(pred .- data .* log.(pred))
+end
+
+# loss_negbin evaluated in BigFloat (default 256-bit precision) with r = exp(-2 log_phi), no bounds.
+# The value and gradients are returned as Float64, so the optimiser and the ODE stay in Float64.
+function loss_negbin_bigfloat(pred, data, log_phi)
+    return Float64(loss_negbin(BigFloat.(pred), data, exp(-2 * BigFloat(log_phi))))
+end
+
+Zygote.@adjoint function loss_negbin_bigfloat(pred, data, log_phi)
+    val, back = Zygote.pullback((p, l) -> loss_negbin(p, data, exp(-2 * l)), BigFloat.(pred), BigFloat(log_phi))
+    function loss_negbin_bigfloat_pullback(ȳ)
+        g_pred, g_log_phi = back(BigFloat(ȳ))
+        return (Float64.(g_pred), nothing, Float64(g_log_phi))
+    end
+    return Float64(val), loss_negbin_bigfloat_pullback
+end
+
+# The poisson_switch loss variant uses the Poisson NLL once r reaches this value
+const POISSON_SWITCH_R = 1e5
+
+# How the noise level phi is turned into the NB dispersion r in loss_ude:
+#   "bounded"        phi = exp(log_phi) + 1e-3, r = 1/phi^2 + 1e-2   (r in ~[1e-2, 1e6])
+#   "bigfloat"       r = 1/phi^2 with no bounds, NLL evaluated in BigFloat (tests whether Float64 rounding is the problem)
+#   "poisson_switch" r = 1/phi^2 with no bounds, Poisson NLL once r >= POISSON_SWITCH_R
+const LOSS_VARIANTS = ("bounded", "bigfloat", "poisson_switch")
+
+# The noise level the likelihood actually uses for a given log_phi
+phi_effective(log_phi, loss_variant) = loss_variant == "bounded" ? exp(log_phi) + 1e-3 : exp(log_phi)
+
 #=============================================================
 LOSS FUNCTION FOR SINGLE DATASET USING NMSE
 ==============================================================# 
 
-function loss_ude(p_all, predict_ude, data, u0, tpts, noise, r)
+function loss_ude(p_all, predict_ude, data, u0, tpts, noise, r; loss_variant="bounded")
     pred = predict_ude(p_all, u0)
 
     if isnothing(pred)
@@ -35,12 +69,23 @@ function loss_ude(p_all, predict_ude, data, u0, tpts, noise, r)
         # Mean squared error on the requested time points
         nmse = loss_nmse(pred[tpts], data[tpts])
     else
-        # Negative binomial loss on the requested time points
-        # we enforce a lower bound on r via addition of small amount to r
-        # and an upper bound via adding a small amount to phi
-        phi_used = exp(p_all.log_phi) + 1e-3
-        r_used = 1/phi_used^2 + 1e-2
-        nmse = loss_negbin(pred[tpts], data[tpts], r_used)
+        # Negative binomial loss on the requested time points (see LOSS_VARIANTS)
+        if loss_variant == "bounded"
+            # we enforce a lower bound on r via addition of small amount to r
+            # and an upper bound via adding a small amount to phi
+            phi_used = exp(p_all.log_phi) + 1e-3
+            r_used = 1/phi_used^2 + 1e-2
+            nmse = loss_negbin(pred[tpts], data[tpts], r_used)
+        elseif loss_variant == "bigfloat"
+            # r is formed in BigFloat as well, so it cannot overflow when log_phi is very negative
+            nmse = loss_negbin_bigfloat(pred[tpts], data[tpts], p_all.log_phi)
+        elseif loss_variant == "poisson_switch"
+            r_used = exp(-2 * p_all.log_phi)
+            nmse = r_used >= POISSON_SWITCH_R ? loss_poisson(pred[tpts], data[tpts]) :
+                                                loss_negbin(pred[tpts], data[tpts], r_used)
+        else
+            error("Unknown loss_variant $(loss_variant); expected one of $(LOSS_VARIANTS)")
+        end
     end
     return nmse
 

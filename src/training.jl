@@ -113,7 +113,7 @@ end
 FUNCTION TO TRAIN UDE MODEL ON SINGLE DATASET
 =========================================================#
 
-function train_ude_single_dataset(p, predict_ude, training_data, u0, beta_function, location, noise, r; maxiters_adam, maxiters_lbfgs, adam_learning_rate)
+function train_ude_single_dataset(p, predict_ude, training_data, u0, beta_function, location, noise, r; maxiters_adam, maxiters_lbfgs, adam_learning_rate, loss_variant="bounded")
 
     # Set up optimisation (first Adam then LBFGS)
     optimised_state = Optimisers.setup(Optimisers.Adam(adam_learning_rate), p)
@@ -153,7 +153,7 @@ function train_ude_single_dataset(p, predict_ude, training_data, u0, beta_functi
     for iter in 1:maxiters_adam
 
         # Compute the loss, predicted mortalities and gradient function
-        train_l, back_all = pullback(theta -> loss_ude(theta, predict_ude, training_data, u0, train_tpts, noise, r) + regularisation(theta.nn_params), p)
+        train_l, back_all = pullback(theta -> loss_ude(theta, predict_ude, training_data, u0, train_tpts, noise, r; loss_variant=loss_variant) + regularisation(theta.nn_params), p)
         iter % 50 == 0 && println("Iteration $iter, Loss: $train_l")
         # Evaluate the gradient of the loss w.r.t p
         grad = back_all((one(train_l)))[1]
@@ -173,7 +173,7 @@ function train_ude_single_dataset(p, predict_ude, training_data, u0, beta_functi
         push!(train_losses, train_l)
 
         # Compute validation loss
-        val_l = loss_ude(p, predict_ude, training_data, u0, val_tpts, noise, r) + regularisation(p.nn_params)
+        val_l = loss_ude(p, predict_ude, training_data, u0, val_tpts, noise, r; loss_variant=loss_variant) + regularisation(p.nn_params)
         push!(val_losses, val_l)
 
         # Store best iteration (minimising validation loss)
@@ -190,7 +190,7 @@ function train_ude_single_dataset(p, predict_ude, training_data, u0, beta_functi
     # Then do LBFGS optimisation
     adtype = Optimization.AutoZygote()
     optfunc   = Optimization.OptimizationFunction(
-                 (theta, _) -> loss_ude(theta, predict_ude, training_data, u0, train_tpts, noise, r) + regularisation(theta.nn_params),
+                 (theta, _) -> loss_ude(theta, predict_ude, training_data, u0, train_tpts, noise, r; loss_variant=loss_variant) + regularisation(theta.nn_params),
                  adtype)
     optprob = Optimization.OptimizationProblem(optfunc, best_p)
 
@@ -203,7 +203,7 @@ function train_ude_single_dataset(p, predict_ude, training_data, u0, beta_functi
             push!(train_losses, train_l)
 
             # Compute validation loss
-            val_l = loss_ude(state.u, predict_ude, training_data, u0, val_tpts, noise, r) + regularisation(state.u.nn_params)
+            val_l = loss_ude(state.u, predict_ude, training_data, u0, val_tpts, noise, r; loss_variant=loss_variant) + regularisation(state.u.nn_params)
             push!(val_losses, val_l)
 
             if val_l < best_loss
