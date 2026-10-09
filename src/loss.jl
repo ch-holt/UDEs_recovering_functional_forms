@@ -36,8 +36,10 @@ function loss_ude(p_all, predict_ude, data, u0, tpts, noise, r)
         nmse = loss_nmse(pred[tpts], data[tpts])
     else
         # Negative binomial loss on the requested time points
-        # we enforce and upper and lower bound on the dispersion parameter to avoid numerical issues
-        r_used = hasproperty(p_all, :log_phi) ? exp(-2 * p_all.log_phi) : r
+        # we enforce a lower bound on r via addition of small amount to r
+        # and an upper bound via adding a small amount to phi
+        phi_used = exp(-p_all.log_phi) +1e-3
+        r_used = 1/phi_used^2 + 1e-2
         nmse = loss_negbin(pred[tpts], data[tpts], r_used)
     end
     return nmse

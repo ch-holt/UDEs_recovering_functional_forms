@@ -41,3 +41,8 @@ solver_summary_tables.jl
 solver_timing_summary.jl
 solver_violin_plots.jl
 .vscode/
+reltol_infeasible_table.jl
+reltol_summary_tables.jl
+reltol_timing_summary.jl
+reltol_violin_plots.jl
+present_estphi_noclamp.jl

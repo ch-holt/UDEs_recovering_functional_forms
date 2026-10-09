@@ -15,6 +15,7 @@ using Optimization
 using OptimizationOptimJL
 using SciMLSensitivity
 using Random
+using Distributions
 
 # Call module
 using UDE_FUNCTIONAL_FORMS
@@ -32,7 +33,9 @@ function run_model(sim_name, beta_function, location, data, true_data, train_len
     p, st = Lux.setup(rng, beta_network)
     p = ComponentArray(p)
     p = Float64.(p)
-    phi_init = 0.17
+
+    # Random starting noise level for each seed (multistart), log-uniform on [1e-3, 1]
+    phi_init = exp(rand(rng, Uniform(log(1e-3), log(1.0))))
 
     # Combine all parameters into a single object for optimisation
     # If we are doing the noise experiments e.g. when noise>0, we also want to jointly estimate the noise parameter phi
