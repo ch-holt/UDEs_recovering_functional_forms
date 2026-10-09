@@ -49,7 +49,8 @@ const POISSON_SWITCH_R = 1e5
 #   "bounded"        phi = exp(log_phi) + 1e-3, r = 1/phi^2 + 1e-2   (r in ~[1e-2, 1e6])
 #   "bigfloat"       r = 1/phi^2 with no bounds, NLL evaluated in BigFloat (tests whether Float64 rounding is the problem)
 #   "poisson_switch" r = 1/phi^2 with no bounds, Poisson NLL once r >= POISSON_SWITCH_R
-const LOSS_VARIANTS = ("bounded", "bigfloat", "poisson_switch")
+#   "unbounded"      r = 1/phi^2 with no bounds, Float64 NB NLL (the control for bigfloat and poisson_switch)
+const LOSS_VARIANTS = ("bounded", "bigfloat", "poisson_switch", "unbounded")
 
 # The noise level the likelihood actually uses for a given log_phi
 phi_effective(log_phi, loss_variant) = loss_variant == "bounded" ? exp(log_phi) + 1e-3 : exp(log_phi)
@@ -83,6 +84,8 @@ function loss_ude(p_all, predict_ude, data, u0, tpts, noise, r; loss_variant="bo
             r_used = exp(-2 * p_all.log_phi)
             nmse = r_used >= POISSON_SWITCH_R ? loss_poisson(pred[tpts], data[tpts]) :
                                                 loss_negbin(pred[tpts], data[tpts], r_used)
+        elseif loss_variant == "unbounded"
+            nmse = loss_negbin(pred[tpts], data[tpts], exp(-2 * p_all.log_phi))
         else
             error("Unknown loss_variant $(loss_variant); expected one of $(LOSS_VARIANTS)")
         end

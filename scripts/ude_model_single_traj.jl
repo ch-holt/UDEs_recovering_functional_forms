@@ -151,7 +151,7 @@ const solver, reltol_override = SOLVER_CONFIGS[solver_name]
 const loss_variant = get(ARGS, 5, "bounded")
 loss_variant in LOSS_VARIANTS || error("Unknown loss_variant $(loss_variant); expected one of $(LOSS_VARIANTS)")
 const ESTPHI_SUFFIX = Dict("bounded" => "_estphi_randinit_bounded", "bigfloat" => "_estphi_randinit_bigfloat",
-                           "poisson_switch" => "_estphi_randinit_poissonswitch")
+                           "poisson_switch" => "_estphi_randinit_poissonswitch", "unbounded" => "_estphi_randinit_unbounded")
 
 # print settings
 println("Settings: beta=$(beta_function), noise=$(noise), train_length=$(train_length), solver=$(solver_name), reltol=$(something(reltol_override, "default")), loss_variant=$(loss_variant)")
