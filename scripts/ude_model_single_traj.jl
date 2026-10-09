@@ -48,8 +48,9 @@ function run_model(sim_name, beta_function, location, data, true_data, train_len
 
     p_trained, train_losses_final, val_losses_final = train_ude_single_dataset(p_init, predict_ude, training_data, u0, beta_function, location, noise, r; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, adam_learning_rate=adam_learning_rate)
 
-    # Recover the jointly estimated noise level (only estimated when noise>0)
-    phi_hat = noise == 0 ? missing : exp(p_trained.log_phi)
+    # Recover the jointly estimated noise level (only estimated when noise>0),
+    # including the 1e-3 floor so it matches the phi used in loss_ude
+    phi_hat = noise == 0 ? missing : exp(p_trained.log_phi) + 1e-3
 
     loc_foldername = "synthetic_$(location)"
 
@@ -183,7 +184,7 @@ maxiters_lbfgs = 2000
 const r = noise == 0 ? Inf : 1 / noise^2
 
 model_name = "ude_single"
-sim_name = "$(solver_name)_UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_traindata=$(train_length)_noise=$(noise)$(noise == 0 ? "" : "_estphi_noclamp")"
+sim_name = "$(solver_name)_UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_traindata=$(train_length)_noise=$(noise)$(noise == 0 ? "" : "_estphi_randinit_bounded")"
 
 if !isdir(datadir("exp_pro","sims", model_name, sim_name))
     mkpath(datadir("exp_pro","sims", model_name, sim_name))
