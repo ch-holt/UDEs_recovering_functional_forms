@@ -28,6 +28,7 @@ const PREVALENCE = _ground_truth["PREVALENCE"]
 const R0_REPRODUCTION = _ground_truth["R0_REPRODUCTION"]
 const DELTA = _ground_truth["DELTA"]
 const ZETA = _ground_truth["ZETA"]
+const C0 = _ground_truth["C0"]
 
 include("ode_model.jl")
 include("neural_network.jl")
@@ -43,13 +44,13 @@ export make_seird_functional, run_seird_functional_form, make_seird_nn, make_pre
 export build_neural_network
 export loss_ude, regularisation, loss_nmse, combined_loss_ude_adam, combined_loss_ude_lbfgs
 export phi_effective, LOSS_VARIANTS, POISSON_SWITCH_R
-export beta_exp, beta_rational, beta_mixed
+export beta_exp, beta_rational, beta_mixed, contacts_exp, contacts_rational, contacts_mixed
 export add_neg_bin_noise, extract_best_ude, format_equation_sigfigs, extract_ude, get_seed_folders, find_peak
 export train_ude_single_dataset, train_ude_multiple_datasets
 export train_baseline_single_dataset, beta0_uncertainty
 export load_trajectories
 export build_sr_inputs, run_symbolic_regression
 export plot_ensemble_summary
-export POPULATION, PREVALENCE, R0_REPRODUCTION, DELTA, ZETA
+export POPULATION, PREVALENCE, R0_REPRODUCTION, DELTA, ZETA, C0
 
 end

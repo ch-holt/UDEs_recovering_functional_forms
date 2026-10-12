@@ -11,7 +11,7 @@ function loss_nmse(pred, data)
     return nmse
 end
 
-# Negative binomial loss
+# Negative binomial negative log likelihood
 # Assuming pred is the mean of the negative binomial distribution, r is the dispersion parameter, and data is the observations
 function loss_negbin(pred, data, r)
     # ensure prediction is positive
@@ -20,8 +20,7 @@ function loss_negbin(pred, data, r)
     return nll
 end
 
-# Poisson negative log-likelihood, dropping the constant sum(log k!) as loss_negbin does,
-# so it is the r -> infinity limit of loss_negbin
+# Poisson negative log-likelihood
 function loss_poisson(pred, data)
     pred = max.(pred, eps())
     return sum(pred .- data .* log.(pred))

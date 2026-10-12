@@ -34,8 +34,11 @@ function run_model(sim_name, beta_function, location, data, true_data, train_len
     p = ComponentArray(p)
     p = Float64.(p)
 
-    # Random starting noise level for each seed (multistart), log-uniform on [1e-3, 1]
-    phi_init = exp(rand(rng, Uniform(log(1e-3), log(1.0))))
+    # Random starting noise level for each seed (multistart), log-uniform on [1e-3, 1].
+    # For poisson_switch the lower end is raised to the switch point (phi = 1/sqrt(POISSON_SWITCH_R)),
+    # otherwise a seed can start in the Poisson regime, where phi has zero gradient and never moves
+    phi_lower = loss_variant == "poisson_switch" ? 1 / sqrt(POISSON_SWITCH_R) : 1e-3
+    phi_init = exp(rand(rng, Uniform(log(phi_lower), log(1.0))))
 
     # Combine all parameters into a single object for optimisation
     # If we are doing the noise experiments e.g. when noise>0, we also want to jointly estimate the noise parameter phi
@@ -151,7 +154,7 @@ const solver, reltol_override = SOLVER_CONFIGS[solver_name]
 const loss_variant = get(ARGS, 5, "bounded")
 loss_variant in LOSS_VARIANTS || error("Unknown loss_variant $(loss_variant); expected one of $(LOSS_VARIANTS)")
 const ESTPHI_SUFFIX = Dict("bounded" => "_estphi_randinit_bounded", "bigfloat" => "_estphi_randinit_bigfloat",
-                           "poisson_switch" => "_estphi_randinit_poissonswitch", "unbounded" => "_estphi_randinit_unbounded")
+                           "poisson_switch" => "_estphi_randinit_poissonswitch_newbounds","unbounded" => "_estphi_randinit_unbounded")
 
 # print settings
 println("Settings: beta=$(beta_function), noise=$(noise), train_length=$(train_length), solver=$(solver_name), reltol=$(something(reltol_override, "default")), loss_variant=$(loss_variant)")

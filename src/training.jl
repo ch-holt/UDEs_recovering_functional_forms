@@ -195,6 +195,33 @@ function train_ude_single_dataset(p, predict_ude, training_data, u0, beta_functi
     optprob = Optimization.OptimizationProblem(optfunc, best_p)
 
     iter_lbfgs = Ref(0)
+    final_p = try
+        res = Optimization.solve(
+            optprob,
+            Optim.LBFGS(m=10),
+            callback = (state, train_l) -> begin
+                iter_lbfgs[] += 1
+                push!(train_losses, train_l)
+
+                # Compute validation loss
+                val_l = loss_ude(state.u, predict_ude, training_data, u0, val_tpts, noise, r; loss_variant=loss_variant) + regularisation(state.u.nn_params)
+                push!(val_losses, val_l)
+
+                if val_l < best_loss
+                    best_loss = val_l
+                    best_p = state.u
+                end
+
+                iter_lbfgs[] % 50 == 0 && println("LBFGS iter $(iter_lbfgs[]): $train_l")
+                return false
+            end,
+            maxiters = maxiters_lbfgs
+        )
+        res.u
+    catch e
+        println("LBFGS failed ($e), returning best Adam parameters.")
+        best_p
+    end
     res = Optimization.solve(
         optprob,
         Optim.LBFGS(m=10),

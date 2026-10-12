@@ -35,6 +35,9 @@ function summarise_results(sim_name_dir::String, population::Real)
         best_val_loss = ismissing(val_losses) ? missing : minimum(val_losses)
         # Jointly estimated noise level (missing for noise=0 and for fixed-r runs)
         phi_hat         = get(data, "phi_hat",         missing)
+        phi_init        = get(data, "phi_init",        missing)
+        # poisson_switch only: final r >= POISSON_SWITCH_R (missing for other variants and older runs)
+        poisson_regime  = get(data, "poisson_regime",  missing)
 
         # "prediction" is the long-term solve (3 years, row 3 = infectious compartment);
         # check feasibility over the full saved horizon.
@@ -51,6 +54,8 @@ function summarise_results(sim_name_dir::String, population::Real)
             nmse_I_grid     = loss_I_grid,
             best_val_loss   = best_val_loss,
             phi_hat         = phi_hat,
+            phi_init        = phi_init,
+            poisson_regime  = poisson_regime,
             max_forecast    = max_forecast,
             feasible        = feasible,
         ))
