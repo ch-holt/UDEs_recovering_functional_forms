@@ -51,8 +51,14 @@ const POISSON_SWITCH_R = 1e5
 #   "unbounded"      r = 1/phi^2 with no bounds, Float64 NB NLL (the control for bigfloat and poisson_switch)
 const LOSS_VARIANTS = ("bounded", "bigfloat", "poisson_switch", "unbounded")
 
-# The noise level the likelihood actually uses for a given log_phi
-phi_effective(log_phi, loss_variant) = loss_variant == "bounded" ? exp(log_phi) + 1e-3 : exp(log_phi)
+# Dispersion used by the "bounded" variant: a lower bound on r via addition of a small amount to r
+# and an upper bound via adding a small amount to phi
+r_bounded(log_phi) = 1 / (exp(log_phi) + 1e-3)^2 + 1e-2
+
+# The noise level the likelihood actually uses for a given log_phi, phi = 1/sqrt(r).
+# For "bounded" this includes the floor on r, so it is at most 1/sqrt(1e-2) = 10 even when
+# log_phi has drifted far above it (the likelihood is flat in log_phi there)
+phi_effective(log_phi, loss_variant) = loss_variant == "bounded" ? 1 / sqrt(r_bounded(log_phi)) : exp(log_phi)
 
 #=============================================================
 LOSS FUNCTION FOR SINGLE DATASET USING NMSE
@@ -71,11 +77,8 @@ function loss_ude(p_all, predict_ude, data, u0, tpts, noise, r; loss_variant="bo
     else
         # Negative binomial loss on the requested time points (see LOSS_VARIANTS)
         if loss_variant == "bounded"
-            # we enforce a lower bound on r via addition of small amount to r
-            # and an upper bound via adding a small amount to phi
-            phi_used = exp(p_all.log_phi) + 1e-3
-            r_used = 1/phi_used^2 + 1e-2
-            nmse = loss_negbin(pred[tpts], data[tpts], r_used)
+            # bounds on r, see r_bounded
+            nmse = loss_negbin(pred[tpts], data[tpts], r_bounded(p_all.log_phi))
         elseif loss_variant == "bigfloat"
             # r is formed in BigFloat as well, so it cannot overflow when log_phi is very negative
             nmse = loss_negbin_bigfloat(pred[tpts], data[tpts], p_all.log_phi)

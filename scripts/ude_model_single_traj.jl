@@ -34,11 +34,10 @@ function run_model(sim_name, beta_function, location, data, true_data, train_len
     p = ComponentArray(p)
     p = Float64.(p)
 
-    # Random starting noise level for each seed (multistart), log-uniform on [1e-3, 1].
-    # For poisson_switch the lower end is raised to the switch point (phi = 1/sqrt(POISSON_SWITCH_R)),
-    # otherwise a seed can start in the Poisson regime, where phi has zero gradient and never moves
-    phi_lower = loss_variant == "poisson_switch" ? 1 / sqrt(POISSON_SWITCH_R) : 1e-3
-    phi_init = exp(rand(rng, Uniform(log(phi_lower), log(1.0))))
+    # Random starting noise level for each seed (multistart), log-uniform on [1/sqrt(POISSON_SWITCH_R), 1],
+    # i.e. above the point where poisson_switch changes to the Poisson NLL (there phi has zero gradient
+    # and never moves).
+    phi_init = exp(rand(rng, Uniform(log(1 / sqrt(POISSON_SWITCH_R)), log(1.0))))
 
     # Combine all parameters into a single object for optimisation
     # If we are doing the noise experiments e.g. when noise>0, we also want to jointly estimate the noise parameter phi
