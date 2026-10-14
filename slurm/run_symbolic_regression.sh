@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=run_symbolic_regression
-#SBATCH --array=1-51
+#SBATCH --array=1-1071
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=charlotte.holt@lshtm.ac.uk
 #SBATCH --mem=4gb

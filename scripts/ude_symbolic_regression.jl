@@ -121,10 +121,14 @@ sr_name(setting) = "SR_input=$(setting.input)_parsimony=$(setting.parsimony)_max
 
 
 
-# create an array job - each job is given a number so all locations run simultaneously
+# create an array job - one task per (SR setting, location) pair so all run simultaneously
+# (all 21 settings for one location take longer than the 24h limit).
+# Tasks 1-51 are setting 1 for every location, 52-102 setting 2, and so on (1-1071 in total)
 const LOCATIONS = sort(collect(keys(POPULATION)))
-location = LOCATIONS[parse(Int, ENV["SLURM_ARRAY_TASK_ID"])]
-println("Running symbolic regression for location: $(location)")
+task_id = parse(Int, ENV["SLURM_ARRAY_TASK_ID"])
+location = LOCATIONS[mod1(task_id, length(LOCATIONS))]
+setting = SR_SETTINGS[cld(task_id, length(LOCATIONS))]
+println("Running symbolic regression for location: $(location), $(sr_name(setting))")
 
 sim_name = "$(solver_name)_UDE_single_beta=$(beta_function)_adam=2500_lbfgs=2000_traindata=$(train_length)_noise=$(noise)"
 root = datadir("exp_pro","sims",  "ude_single", sim_name, "synthetic_$(location)")
@@ -179,7 +183,7 @@ const n_failed = Ref(0)
 
 # Seeds run one after another on one thread: SR with deterministic=true uses a global
 # counter that is not thread safe, so threading over seeds makes results irreproducible
-for setting in SR_SETTINGS, folder in seed_folders
+for folder in seed_folders
 
     # Create output directory
     output_dir = joinpath(@__DIR__, "..", "scripts", "outputs", "$(sim_name)", sr_name(setting), "synthetic_$(location)", folder)
