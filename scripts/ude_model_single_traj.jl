@@ -152,7 +152,8 @@ const solver, reltol_override = SOLVER_CONFIGS[solver_name]
 # How phi is mapped to r in the NB loss for the noise experiments (see LOSS_VARIANTS in src/loss.jl) - default bounded
 const loss_variant = get(ARGS, 5, "bounded")
 loss_variant in LOSS_VARIANTS || error("Unknown loss_variant $(loss_variant); expected one of $(LOSS_VARIANTS)")
-const ESTPHI_SUFFIX = Dict("bounded" => "_estphi_randinit_bounded", "bigfloat" => "_estphi_randinit_bigfloat",
+const ESTPHI_SUFFIX = Dict("bounded" => "_estphi_randinit_bounded_newinit",
+                           "bounded_1e5" => "_estphi_randinit_bounded1e5_newinit", "bigfloat" => "_estphi_randinit_bigfloat",
                            "poisson_switch" => "_estphi_randinit_poissonswitch_newbounds","unbounded" => "_estphi_randinit_unbounded")
 
 # print settings

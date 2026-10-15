@@ -37,11 +37,11 @@ function summarise_results(sim_name_dir::String, population::Real; loss_variant=
         best_val_loss = ismissing(val_losses) ? missing : minimum(val_losses)
         # Jointly estimated noise level (missing for noise=0 and for fixed-r runs)
         phi_hat         = get(data, "phi_hat",         missing)
-        # For "bounded", recompute phi_hat from the trained log_phi with the current phi_effective
+        # For the bounded variants, recompute phi_hat from the trained log_phi with the current phi_effective
         # (1/sqrt(r_used), at most 10), as older runs saved exp(log_phi) + 1e-3, which ignores the floor on r
         variant = get(data, "loss_variant", loss_variant)
-        if variant == "bounded" && !ismissing(phi_hat) && haskey(data, "p")
-            phi_hat = phi_effective(data["p"].log_phi, "bounded")
+        if haskey(BOUNDED_PHI_MIN, something(variant, "")) && !ismissing(phi_hat) && haskey(data, "p")
+            phi_hat = phi_effective(data["p"].log_phi, variant)
         end
         phi_init       = get(data, "phi_init",        missing)
         # poisson_switch only: final r >= POISSON_SWITCH_R (missing for other variants and older runs)

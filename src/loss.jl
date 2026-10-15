@@ -46,19 +46,25 @@ const POISSON_SWITCH_R = 1e5
 
 # How the noise level phi is turned into the NB dispersion r in loss_ude:
 #   "bounded"        phi = exp(log_phi) + 1e-3, r = 1/phi^2 + 1e-2   (r in ~[1e-2, 1e6])
+#   "bounded_1e5"    as "bounded" but phi = exp(log_phi) + 1/sqrt(POISSON_SWITCH_R), so r in ~[1e-2, 1e5],
+#                    the same cap on r as the point where poisson_switch changes to the Poisson NLL
 #   "bigfloat"       r = 1/phi^2 with no bounds, NLL evaluated in BigFloat (tests whether Float64 rounding is the problem)
 #   "poisson_switch" r = 1/phi^2 with no bounds, Poisson NLL once r >= POISSON_SWITCH_R
 #   "unbounded"      r = 1/phi^2 with no bounds, Float64 NB NLL (the control for bigfloat and poisson_switch)
-const LOSS_VARIANTS = ("bounded", "bigfloat", "poisson_switch", "unbounded")
+const LOSS_VARIANTS = ("bounded", "bounded_1e5", "bigfloat", "poisson_switch", "unbounded")
 
-# Dispersion used by the "bounded" variant: a lower bound on r via addition of a small amount to r
+# The bounded variants, and the amount added to phi in each (sets the cap on r, ~1/phi_min^2)
+const BOUNDED_PHI_MIN = Dict("bounded" => 1e-3, "bounded_1e5" => 1 / sqrt(POISSON_SWITCH_R))
+
+# Dispersion used by the bounded variants: a lower bound on r via addition of a small amount to r
 # and an upper bound via adding a small amount to phi
-r_bounded(log_phi) = 1 / (exp(log_phi) + 1e-3)^2 + 1e-2
+r_bounded(log_phi, loss_variant="bounded") = 1 / (exp(log_phi) + BOUNDED_PHI_MIN[loss_variant])^2 + 1e-2
 
 # The noise level the likelihood actually uses for a given log_phi, phi = 1/sqrt(r).
-# For "bounded" this includes the floor on r, so it is at most 1/sqrt(1e-2) = 10 even when
+# For the bounded variants this includes the floor on r, so it is at most 1/sqrt(1e-2) = 10 even when
 # log_phi has drifted far above it (the likelihood is flat in log_phi there)
-phi_effective(log_phi, loss_variant) = loss_variant == "bounded" ? 1 / sqrt(r_bounded(log_phi)) : exp(log_phi)
+phi_effective(log_phi, loss_variant) =
+    haskey(BOUNDED_PHI_MIN, loss_variant) ? 1 / sqrt(r_bounded(log_phi, loss_variant)) : exp(log_phi)
 
 #=============================================================
 LOSS FUNCTION FOR SINGLE DATASET USING NMSE
@@ -76,9 +82,9 @@ function loss_ude(p_all, predict_ude, data, u0, tpts, noise, r; loss_variant="bo
         nmse = loss_nmse(pred[tpts], data[tpts])
     else
         # Negative binomial loss on the requested time points (see LOSS_VARIANTS)
-        if loss_variant == "bounded"
+        if haskey(BOUNDED_PHI_MIN, loss_variant)
             # bounds on r, see r_bounded
-            nmse = loss_negbin(pred[tpts], data[tpts], r_bounded(p_all.log_phi))
+            nmse = loss_negbin(pred[tpts], data[tpts], r_bounded(p_all.log_phi, loss_variant))
         elseif loss_variant == "bigfloat"
             # r is formed in BigFloat as well, so it cannot overflow when log_phi is very negative
             nmse = loss_negbin_bigfloat(pred[tpts], data[tpts], p_all.log_phi)
