@@ -1,6 +1,6 @@
 #========================================================
 SCRIPT TO PLOT THE SYMBOLIC REGRESSION RESULTS
-(saved by scripts/ude_symbolic_regression.jl)
+
 =========================================================#
 
 using DrWatson
