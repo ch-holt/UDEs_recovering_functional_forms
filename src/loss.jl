@@ -43,6 +43,15 @@ function loss_negbin_stable(pred, data, r)
     return sum(-lgamma_ratio.(data, r) .+ (r .+ data) .* log1p.(pred ./ r) .- data .* log.(pred))
 end
 
+# loss_negbin_stable with the gamma ratio as the exact sum lgamma_ratio(y, r) = sum_{k=0}^{y-1} log1p(k/r).
+# Needs integer counts and costs O(sum(data)) per evaluation, so it is only used to measure runtime
+# (see _research/benchmark_nll_formulations.jl)
+function loss_negbin_exact_sum(pred, data, r)
+    pred = max.(pred, eps())
+    r = min(r, 1e100)
+    return sum((data .+ r) .* log1p.(pred ./ r) .- data .* log.(pred) .- [sum(log1p.((0:Int(d)-1) ./ r)) for d in data])
+end
+
 # loss_negbin evaluated in BigFloat (default 256-bit precision) with r = exp(-2 log_phi), no bounds.
 # The value and gradients are returned as Float64, so the optimiser and the ODE stay in Float64.
 function loss_negbin_bigfloat(pred, data, log_phi)
@@ -69,8 +78,9 @@ const POISSON_SWITCH_R = 1e5
 #   "poisson_switch" r = 1/phi^2 with no bounds, Poisson NLL once r >= POISSON_SWITCH_R
 #   "poisson_switch_bounded" r = 1/phi^2 + 1e-2 (the floor on r of "bounded", phi <= 10), Poisson NLL once r >= POISSON_SWITCH_R
 #   "stable"         r = 1/phi^2 with no bounds, NB NLL in the rearranged form loss_negbin_stable
+#   "stable_exact"   as "stable" but with the exact-sum gamma ratio (loss_negbin_exact_sum), for timing only
 #   "unbounded"      r = 1/phi^2 with no bounds, Float64 NB NLL (the control for bigfloat and poisson_switch)
-const LOSS_VARIANTS = ("bounded", "bounded_1e5", "bigfloat", "poisson_switch", "poisson_switch_bounded", "stable", "unbounded")
+const LOSS_VARIANTS = ("bounded", "bounded_1e5", "bigfloat", "poisson_switch", "poisson_switch_bounded", "stable", "stable_exact", "unbounded")
 
 # The bounded variants, and the amount added to phi in each (sets the cap on r, ~1/phi_min^2)
 const BOUNDED_PHI_MIN = Dict("bounded" => 1e-3, "bounded_1e5" => 1 / sqrt(POISSON_SWITCH_R))
@@ -120,6 +130,8 @@ function loss_ude(p_all, predict_ude, data, u0, tpts, noise, r; loss_variant="bo
         elseif loss_variant == "stable"
             # limit log_phi before exp so r <= exp(230) ~ 1e100 (see loss_negbin_stable) and the gradient is 0, not NaN, beyond it
             nmse = loss_negbin_stable(pred[tpts], data[tpts], exp(-2 * max(p_all.log_phi, -115.0)))
+        elseif loss_variant == "stable_exact"
+            nmse = loss_negbin_exact_sum(pred[tpts], data[tpts], exp(-2 * max(p_all.log_phi, -115.0)))
         elseif loss_variant == "unbounded"
             nmse = loss_negbin(pred[tpts], data[tpts], exp(-2 * p_all.log_phi))
         else

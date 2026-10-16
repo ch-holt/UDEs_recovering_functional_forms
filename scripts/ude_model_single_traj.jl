@@ -152,11 +152,14 @@ const solver, reltol_override = SOLVER_CONFIGS[solver_name]
 # How phi is mapped to r in the NB loss for the noise experiments (see LOSS_VARIANTS in src/loss.jl) - default bounded
 const loss_variant = get(ARGS, 5, "bounded")
 loss_variant in LOSS_VARIANTS || error("Unknown loss_variant $(loss_variant); expected one of $(LOSS_VARIANTS)")
+# Number of seeds per location (seeds 1:n_seeds) - default 100; fewer only for timing runs
+const n_seeds = parse(Int, get(ARGS, 6, "100"))
 const ESTPHI_SUFFIX = Dict("bounded" => "_estphi_randinit_bounded_newinit",
                            "bounded_1e5" => "_estphi_randinit_bounded1e5_newinit", "bigfloat" => "_estphi_randinit_bigfloat",
                            "poisson_switch" => "_estphi_randinit_poissonswitch_newbounds",
                            "poisson_switch_bounded" => "_estphi_randinit_poissonswitchbounded_newinit",
-                           "stable" => "_estphi_randinit_stable_newinit", "unbounded" => "_estphi_randinit_unbounded")
+                           "stable" => "_estphi_randinit_stable_newinit",
+                           "stable_exact" => "_estphi_randinit_stableexact_newinit", "unbounded" => "_estphi_randinit_unbounded")
 
 # print settings
 println("Settings: beta=$(beta_function), noise=$(noise), train_length=$(train_length), solver=$(solver_name), reltol=$(something(reltol_override, "default")), loss_variant=$(loss_variant)")
@@ -235,7 +238,7 @@ S0 = population - E0 - I0 - R0_recovered - D0
 u0 = [S0, E0, I0, R0_recovered, D0]
 
 # run the model on multiple threads
-Threads.@threads for i = 1:100
+Threads.@threads for i = 1:n_seeds
     # Resume support: skip a seed whose results already exist, so a rerun (e.g. after
     # a timeout or crash) only computes the seeds still missing instead of starting
     # over from seed 1.
