@@ -78,6 +78,11 @@ function symbolic_regression(I_nn, best_results, output_dir, input_size, locatio
         I_grid_pm10 = collect(range(max(0.0, min_i_norm - 0.1 * width), max_i_norm + 0.1 * width; length=100))
         SR_input_fit = reshape(I_grid_pm10, :, 1)
         nn_output_fit = vec(beta_network(reshape(I_grid_pm10, 1, :), p_trained.nn_params, st_nn)[1])
+    elseif setting.input == "ons10"
+        # 1000 points across the ONS prevalence range, I/N in [0, 0.1]
+        I_grid_ons = collect(range(0.0, 0.1; length=1000))
+        SR_input_fit = reshape(I_grid_ons, :, 1)
+        nn_output_fit = vec(beta_network(reshape(I_grid_ons, 1, :), p_trained.nn_params, st_nn)[1])
     else
         error("Unknown SR input $(setting.input)")
     end
@@ -114,7 +119,13 @@ const SR_INPUT_SETTINGS = [(input=input, parsimony=3, maxsize=30, complexity_of_
 # 2. SR settings, fitted on the NN on 1000 points on [0, 1]
 const SR_OPTION_SETTINGS = [(input="unit", parsimony=parsimony, maxsize=maxsize, complexity_of_constants=coc)
                             for parsimony in [2, 3, 4] for maxsize in [10, 14] for coc in [1, 2, 3]]
-const SR_SETTINGS = vcat(SR_INPUT_SETTINGS, SR_OPTION_SETTINGS)
+# 3. Added after the first sweep (appended so the array task numbers of 1. and 2. don't change):
+#    the ONS prevalence range, and the training-range and ONS grids with parsimony=2, maxsize=10, complexity_of_constants=3
+const SR_EXTRA_SETTINGS = [(input="ons10", parsimony=3, maxsize=30, complexity_of_constants=2),
+                           (input="train", parsimony=2, maxsize=10, complexity_of_constants=3),
+                           (input="train_pm10", parsimony=2, maxsize=10, complexity_of_constants=3),
+                           (input="ons10", parsimony=2, maxsize=10, complexity_of_constants=3)]
+const SR_SETTINGS = vcat(SR_INPUT_SETTINGS, SR_OPTION_SETTINGS, SR_EXTRA_SETTINGS)
 
 sr_name(setting) = "SR_input=$(setting.input)_parsimony=$(setting.parsimony)_maxsize=$(setting.maxsize)_coc=$(setting.complexity_of_constants)"
 
@@ -123,7 +134,7 @@ sr_name(setting) = "SR_input=$(setting.input)_parsimony=$(setting.parsimony)_max
 
 # create an array job - one task per (SR setting, location) pair so all run simultaneously
 # (all 21 settings for one location take longer than the 24h limit).
-# Tasks 1-51 are setting 1 for every location, 52-102 setting 2, and so on (1-1071 in total)
+# Tasks 1-51 are setting 1 for every location, 52-102 setting 2, and so on (1-1275 in total)
 const LOCATIONS = sort(collect(keys(POPULATION)))
 task_id = parse(Int, ENV["SLURM_ARRAY_TASK_ID"])
 location = LOCATIONS[mod1(task_id, length(LOCATIONS))]
