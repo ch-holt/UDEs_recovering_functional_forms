@@ -26,6 +26,23 @@ function loss_poisson(pred, data)
     return sum(pred .- data .* log.(pred))
 end
 
+# Stirling remainder: loggamma(z) = (z - 1/2) log z - z + log(2π)/2 + stirling_tail(z), accurate to ~1e-10 for z >= 10
+# (written in powers of w = 1/z, so neither it nor its gradient overflows for very large z)
+stirling_tail(z) = (w = 1 / z; w * (1 / 12 - w^2 * (1 / 360 - w^2 / 1260)))
+
+# loggamma(y + r) - loggamma(r) - y log r, without the r-sized cancellation of the direct form for large r
+lgamma_ratio(y, r) = r < 10 ? loggamma(y + r) - loggamma(r) - y * log(r) :
+                              (r + y - 0.5) * log1p(y / r) - y + stirling_tail(r + y) - stirling_tail(r)
+
+# The same NLL as loss_negbin, rearranged so no term grows with r:
+#   sum( -lgamma_ratio(y, r) + (r + y) log1p(pred/r) - y log(pred) )
+# It is accurate in Float64 for any r and tends continuously to loss_poisson as r -> infinity
+function loss_negbin_stable(pred, data, r)
+    pred = max.(pred, eps())
+    r = min(r, 1e100)   # beyond ~1e154 parts of the gradient underflow; at 1e100 the NLL already equals the Poisson NLL in Float64
+    return sum(-lgamma_ratio.(data, r) .+ (r .+ data) .* log1p.(pred ./ r) .- data .* log.(pred))
+end
+
 # loss_negbin evaluated in BigFloat (default 256-bit precision) with r = exp(-2 log_phi), no bounds.
 # The value and gradients are returned as Float64, so the optimiser and the ODE stay in Float64.
 function loss_negbin_bigfloat(pred, data, log_phi)
@@ -50,8 +67,10 @@ const POISSON_SWITCH_R = 1e5
 #                    the same cap on r as the point where poisson_switch changes to the Poisson NLL
 #   "bigfloat"       r = 1/phi^2 with no bounds, NLL evaluated in BigFloat (tests whether Float64 rounding is the problem)
 #   "poisson_switch" r = 1/phi^2 with no bounds, Poisson NLL once r >= POISSON_SWITCH_R
+#   "poisson_switch_bounded" r = 1/phi^2 + 1e-2 (the floor on r of "bounded", phi <= 10), Poisson NLL once r >= POISSON_SWITCH_R
+#   "stable"         r = 1/phi^2 with no bounds, NB NLL in the rearranged form loss_negbin_stable
 #   "unbounded"      r = 1/phi^2 with no bounds, Float64 NB NLL (the control for bigfloat and poisson_switch)
-const LOSS_VARIANTS = ("bounded", "bounded_1e5", "bigfloat", "poisson_switch", "unbounded")
+const LOSS_VARIANTS = ("bounded", "bounded_1e5", "bigfloat", "poisson_switch", "poisson_switch_bounded", "stable", "unbounded")
 
 # The bounded variants, and the amount added to phi in each (sets the cap on r, ~1/phi_min^2)
 const BOUNDED_PHI_MIN = Dict("bounded" => 1e-3, "bounded_1e5" => 1 / sqrt(POISSON_SWITCH_R))
@@ -64,7 +83,13 @@ r_bounded(log_phi, loss_variant="bounded") = 1 / (exp(log_phi) + BOUNDED_PHI_MIN
 # For the bounded variants this includes the floor on r, so it is at most 1/sqrt(1e-2) = 10 even when
 # log_phi has drifted far above it (the likelihood is flat in log_phi there)
 phi_effective(log_phi, loss_variant) =
-    haskey(BOUNDED_PHI_MIN, loss_variant) ? 1 / sqrt(r_bounded(log_phi, loss_variant)) : exp(log_phi)
+    haskey(BOUNDED_PHI_MIN, loss_variant)     ? 1 / sqrt(r_bounded(log_phi, loss_variant)) :
+    loss_variant == "poisson_switch_bounded" ? 1 / sqrt(r_switch(log_phi, loss_variant)) :
+                                               exp(log_phi)
+
+# Dispersion used by the poisson switch variants, and whether it is in the Poisson regime
+r_switch(log_phi, loss_variant) = loss_variant == "poisson_switch_bounded" ? exp(-2 * log_phi) + 1e-2 : exp(-2 * log_phi)
+in_poisson_regime(log_phi, loss_variant) = r_switch(log_phi, loss_variant) >= POISSON_SWITCH_R
 
 #=============================================================
 LOSS FUNCTION FOR SINGLE DATASET USING NMSE
@@ -88,10 +113,13 @@ function loss_ude(p_all, predict_ude, data, u0, tpts, noise, r; loss_variant="bo
         elseif loss_variant == "bigfloat"
             # r is formed in BigFloat as well, so it cannot overflow when log_phi is very negative
             nmse = loss_negbin_bigfloat(pred[tpts], data[tpts], p_all.log_phi)
-        elseif loss_variant == "poisson_switch"
-            r_used = exp(-2 * p_all.log_phi)
+        elseif loss_variant in ("poisson_switch", "poisson_switch_bounded")
+            r_used = r_switch(p_all.log_phi, loss_variant)
             nmse = r_used >= POISSON_SWITCH_R ? loss_poisson(pred[tpts], data[tpts]) :
                                                 loss_negbin(pred[tpts], data[tpts], r_used)
+        elseif loss_variant == "stable"
+            # limit log_phi before exp so r <= exp(230) ~ 1e100 (see loss_negbin_stable) and the gradient is 0, not NaN, beyond it
+            nmse = loss_negbin_stable(pred[tpts], data[tpts], exp(-2 * max(p_all.log_phi, -115.0)))
         elseif loss_variant == "unbounded"
             nmse = loss_negbin(pred[tpts], data[tpts], exp(-2 * p_all.log_phi))
         else

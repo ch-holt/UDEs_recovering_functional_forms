@@ -54,7 +54,7 @@ function run_model(sim_name, beta_function, location, data, true_data, train_len
     # as the phi the likelihood actually used (includes the 1e-3 floor for "bounded")
     phi_hat = noise == 0 ? missing : phi_effective(p_trained.log_phi, loss_variant)
     # poisson_switch only: whether the final r is in the Poisson regime (then phi_hat is not identified)
-    poisson_regime = (noise != 0 && loss_variant == "poisson_switch") ? exp(-2 * p_trained.log_phi) >= POISSON_SWITCH_R : missing
+    poisson_regime = (noise != 0 && loss_variant in ("poisson_switch", "poisson_switch_bounded")) ? in_poisson_regime(p_trained.log_phi, loss_variant) : missing
 
     loc_foldername = "synthetic_$(location)"
 
@@ -154,7 +154,9 @@ const loss_variant = get(ARGS, 5, "bounded")
 loss_variant in LOSS_VARIANTS || error("Unknown loss_variant $(loss_variant); expected one of $(LOSS_VARIANTS)")
 const ESTPHI_SUFFIX = Dict("bounded" => "_estphi_randinit_bounded_newinit",
                            "bounded_1e5" => "_estphi_randinit_bounded1e5_newinit", "bigfloat" => "_estphi_randinit_bigfloat",
-                           "poisson_switch" => "_estphi_randinit_poissonswitch_newbounds","unbounded" => "_estphi_randinit_unbounded")
+                           "poisson_switch" => "_estphi_randinit_poissonswitch_newbounds",
+                           "poisson_switch_bounded" => "_estphi_randinit_poissonswitchbounded_newinit",
+                           "stable" => "_estphi_randinit_stable_newinit", "unbounded" => "_estphi_randinit_unbounded")
 
 # print settings
 println("Settings: beta=$(beta_function), noise=$(noise), train_length=$(train_length), solver=$(solver_name), reltol=$(something(reltol_override, "default")), loss_variant=$(loss_variant)")
