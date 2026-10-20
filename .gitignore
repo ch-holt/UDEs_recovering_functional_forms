@@ -45,4 +45,3 @@ plot_infections_vs_contacts.jl
 sr_comparison_metaprompt.md
 benchmark_nll_formulations.jl
 present_results_sr_settings.jl
-sr_equation_classifier.jl
