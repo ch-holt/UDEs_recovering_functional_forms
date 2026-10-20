@@ -15,6 +15,7 @@ using Optimization
 using OptimizationOptimJL
 using SciMLSensitivity
 using Random
+using Distributions
 
 # Call module
 using UDE_FUNCTIONAL_FORMS
@@ -23,7 +24,7 @@ using UDE_FUNCTIONAL_FORMS
 MAIN FUNCTION TO TRAIN THE UDE AND SAVE THE RESULTS
 =========================================================# 
 
-function run_model(sim_name, beta_function, location, data, true_data, train_length, u0, seed, predict_ude, beta_network, prob_ude, noise, r; maxiters_adam, maxiters_lbfgs, adam_learning_rate, number_of_nn_inputs=1, model_name, days, delta, population)
+function run_model(sim_name, beta_function, location, data, true_data, train_length, u0, seed, predict_ude, beta_network, prob_ude, noise, r, solver; maxiters_adam, maxiters_lbfgs, adam_learning_rate, number_of_nn_inputs=1, model_name, days, delta, population, reltol=nothing, loss_variant="bounded")
     println("Starting run: on thread $(Threads.threadid())")
     t_start = time()
     rng = Random.seed!(seed)
@@ -33,20 +34,36 @@ function run_model(sim_name, beta_function, location, data, true_data, train_len
     p = ComponentArray(p)
     p = Float64.(p)
 
+    # Random starting noise level for each seed (multistart), log-uniform on [1/sqrt(POISSON_SWITCH_R), 1],
+    # i.e. above the point where poisson_switch changes to the Poisson NLL (there phi has zero gradient
+    # and never moves).
+    phi_init = exp(rand(rng, Uniform(log(1 / sqrt(POISSON_SWITCH_R)), log(1.0))))
+
     # Combine all parameters into a single object for optimisation
-    p_init = ComponentArray(nn_params = p)
+    # If we are doing the noise experiments e.g. when noise>0, we also want to jointly estimate the noise parameter phi
+    # here, r=1/phi^2 - so we can compare the estimate noise with the noise level input
+    # do on the log scale to ensure positivity
+    p_init = noise == 0 ? ComponentArray(nn_params = p) :
+                        ComponentArray(nn_params = p, log_phi = log(phi_init))
 
     training_data = data[1:train_length]
 
-    p_trained, train_losses_final, val_losses_final = train_ude_single_dataset(p_init, predict_ude, training_data, u0, beta_function, location, noise, r; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, adam_learning_rate=adam_learning_rate)
+    p_trained, train_losses_final, val_losses_final = train_ude_single_dataset(p_init, predict_ude, training_data, u0, beta_function, location, noise, r; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, adam_learning_rate=adam_learning_rate, loss_variant=loss_variant)
+
+    # Recover the jointly estimated noise level (only estimated when noise>0),
+    # as the phi the likelihood actually used (includes the 1e-3 floor for "bounded")
+    phi_hat = noise == 0 ? missing : phi_effective(p_trained.log_phi, loss_variant)
+    # poisson_switch only: whether the final r is in the Poisson regime (then phi_hat is not identified)
+    poisson_regime = (noise != 0 && loss_variant in ("poisson_switch", "poisson_switch_bounded")) ? in_poisson_regime(p_trained.log_phi, loss_variant) : missing
 
     loc_foldername = "synthetic_$(location)"
 
     foldername = "simulation_seed=$(seed)"
 
-    # Evaluate final long term results 
+    # Evaluate final long term results
     long_term_prob= remake(prob_ude, p = p_trained, tspan = (1.0, 3*365.0), u0 = u0)
-    long_term_pred = solve(long_term_prob, Tsit5(), saveat=1, dense = false)
+    long_term_pred = isnothing(reltol) ? solve(long_term_prob, solver, saveat=1, dense = false) :
+                                          solve(long_term_prob, solver, saveat=1, dense = false, reltol=reltol)
 
     # Convert to a 1 x N matrix
     x_hat = long_term_pred[3, 1:length(data)]
@@ -88,7 +105,9 @@ function run_model(sim_name, beta_function, location, data, true_data, train_len
 	JLD2.save(datadir("exp_pro","sims", model_name, sim_name, loc_foldername, foldername, "results.jld2"),
 		"location", location, "population", population, "p", p_trained, "train_losses", train_losses_final, "val_losses", val_losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_traj,
 		"days", days, "seed", seed, "noise", noise, "loss_traj_noisy", loss_traj_noisy, "loss_traj_true", loss_traj_true, "loss_beta", loss_beta, "loss_I_grid", loss_I_grid,
-        "loss_I_train", loss_I_train, "y_hat", y_hat, "y_hat_train", y_hat_train, "elapsed_seconds", elapsed)
+        "loss_I_train", loss_I_train, "y_hat", y_hat, "y_hat_train", y_hat_train,
+        "phi_init", phi_init, "phi_hat", phi_hat, "loss_variant", loss_variant, "poisson_regime", poisson_regime,
+        "elapsed_seconds", elapsed)
 
 	println("Finished run: $(location) on thread $(Threads.threadid())")
 
@@ -104,12 +123,46 @@ DEFINE HYPERPARAMETERS
 const BETA_FUNCTIONS = Dict("beta_exp" => beta_exp, "beta_rational" => beta_rational, "beta_mixed" => beta_mixed)
 const beta_function= BETA_FUNCTIONS[get(ARGS, 1, "beta_exp")]
 # get noise - default 0
-const noise = parse(Float64, get(ARGS, 2, "0.0"))
+const noise = parse(Float64, get(ARGS, 2, "0.1"))
 # Number of data points used for training - default 365
 const train_length = parse(Int, get(ARGS, 3, "365"))
+# UDE training/prediction solver - default rosenbrock23. Ground truth is
+# always generated with a fixed, separate high-precision solver (see
+# run_seird_functional_form in src/ode_model.jl) regardless of this choice
+# — this only controls the solver used while training/evaluating the UDE.
+# Each entry is (solver, reltol_override) — reltol=nothing means use the
+# solver's own default (1e-3 for Tsit5/Vern7/the Rosenbrock23 fallback of
+# AutoTsit5). The _rtol<x> entries are the tolerance-sensitivity sweep
+# (reltol=1e-3, the default, is already covered by the plain tsit5/
+# autotsit5 entries, so it isn't repeated here).
+const SOLVER_CONFIGS = Dict(
+    "rosenbrock23"       => (Rosenbrock23(),               nothing),
+    "vern7"              => (Vern7(),                      nothing),
+    "autotsit5"          => (AutoTsit5(Rosenbrock23()),     nothing),
+    "tsit5"              => (Tsit5(),                      nothing),
+    "tsit5_rtol1e-5"     => (Tsit5(),                      1e-5),
+    "tsit5_rtol1e-6"     => (Tsit5(),                      1e-6),
+    "tsit5_rtol1e-10"    => (Tsit5(),                      1e-10),
+    "autotsit5_rtol1e-5"  => (AutoTsit5(Rosenbrock23()),    1e-5),
+    "autotsit5_rtol1e-6"  => (AutoTsit5(Rosenbrock23()),    1e-6),
+    "autotsit5_rtol1e-10" => (AutoTsit5(Rosenbrock23()),    1e-10),
+)
+const solver_name = get(ARGS, 4, "autotsit5")
+const solver, reltol_override = SOLVER_CONFIGS[solver_name]
+# How phi is mapped to r in the NB loss for the noise experiments (see LOSS_VARIANTS in src/loss.jl) - default bounded
+const loss_variant = get(ARGS, 5, "bounded")
+loss_variant in LOSS_VARIANTS || error("Unknown loss_variant $(loss_variant); expected one of $(LOSS_VARIANTS)")
+# Number of seeds per location (seeds 1:n_seeds) - default 100; fewer only for timing runs
+const n_seeds = parse(Int, get(ARGS, 6, "100"))
+const ESTPHI_SUFFIX = Dict("bounded" => "_estphi_randinit_bounded_newinit",
+                           "bounded_1e5" => "_estphi_randinit_bounded1e5_newinit", "bigfloat" => "_estphi_randinit_bigfloat",
+                           "poisson_switch" => "_estphi_randinit_poissonswitch_newbounds",
+                           "poisson_switch_bounded" => "_estphi_randinit_poissonswitchbounded_newinit",
+                           "stable" => "_estphi_randinit_stable_newinit",
+                           "stable_exact" => "_estphi_randinit_stableexact_newinit", "unbounded" => "_estphi_randinit_unbounded")
 
 # print settings
-println("Settings: beta=$(beta_function), noise=$(noise), train_length=$(train_length)")
+println("Settings: beta=$(beta_function), noise=$(noise), train_length=$(train_length), solver=$(solver_name), reltol=$(something(reltol_override, "default")), loss_variant=$(loss_variant)")
 
 # Define the timespan for the ODE solver
 tspan = [1, train_length]
@@ -147,7 +200,7 @@ maxiters_lbfgs = 2000
 const r = noise == 0 ? Inf : 1 / noise^2
 
 model_name = "ude_single"
-sim_name = "train_val_midbeta_UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_traindata=$(train_length)_noise=$(noise)"
+sim_name = "$(solver_name)_UDE_single_beta=$(beta_function)_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_traindata=$(train_length)_noise=$(noise)$(noise == 0 ? "" : ESTPHI_SUFFIX[loss_variant])"
 
 if !isdir(datadir("exp_pro","sims", model_name, sim_name))
     mkpath(datadir("exp_pro","sims", model_name, sim_name))
@@ -163,8 +216,8 @@ println("Running simulation for location: $(location)")
 LOAD DATA
 =========================================================#
 
-dataset = JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_$(beta_function)", "synthetic_$(location)", "noise=$(noise).jld2"))
-true_dataset = noise == 0 ? dataset : JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_$(beta_function)", "synthetic_$(location)", "noise=0.0.jld2"))
+dataset = JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_HQ_$(beta_function)", "synthetic_$(location)", "noise=$(noise).jld2"))
+true_dataset = noise == 0 ? dataset : JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_HQ_$(beta_function)", "synthetic_$(location)", "noise=0.0.jld2"))
 
 data = dataset["infectious"]
 true_data = true_dataset["infectious"]
@@ -185,7 +238,7 @@ S0 = population - E0 - I0 - R0_recovered - D0
 u0 = [S0, E0, I0, R0_recovered, D0]
 
 # run the model on multiple threads
-Threads.@threads for i = 1:100
+Threads.@threads for i = 1:n_seeds
     # Resume support: skip a seed whose results already exist, so a rerun (e.g. after
     # a timeout or crash) only computes the seeds still missing instead of starting
     # over from seed 1.
@@ -203,12 +256,12 @@ Threads.@threads for i = 1:100
 
         local seird_nn! = make_seird_nn(beta_network, st_nn, sigma, gamma, delta, population, input_size)
         local prob_ude = ODEProblem(seird_nn!, u0, tspan, p_nn_temp)
-        local predict_ude = make_predict_ude(prob_ude, train_length)
+        local predict_ude = make_predict_ude(prob_ude, train_length, solver; reltol=reltol_override)
 
-        run_model(sim_name, beta_function, location, data, true_data, train_length, u0, i, predict_ude, beta_network, prob_ude, noise, r;
+        run_model(sim_name, beta_function, location, data, true_data, train_length, u0, i, predict_ude, beta_network, prob_ude, noise, r, solver;
             maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs,
             number_of_nn_inputs=number_of_nn_inputs, adam_learning_rate=adam_learning_rate,
-            model_name=model_name, days=days, delta=delta, population=population)
+            model_name=model_name, days=days, delta=delta, population=population, reltol=reltol_override, loss_variant=loss_variant)
     catch e
         println("Error occurred for seed $(i): $e")
     end

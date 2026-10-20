@@ -111,7 +111,7 @@ end
 FUNCTION TO TRAIN UDE MODEL ON SINGLE DATASET
 =========================================================#
 
-function train_ude_single_dataset(p, predict_ude, training_data, u0, beta_function, location, noise, r; maxiters_adam, maxiters_lbfgs, adam_learning_rate)
+function train_ude_single_dataset(p, predict_ude, training_data, u0, beta_function, location, noise, r; maxiters_adam, maxiters_lbfgs, adam_learning_rate, loss_variant="bounded")
 
     # Set up optimisation (first Adam then LBFGS)
     optimised_state = Optimisers.setup(Optimisers.Adam(adam_learning_rate), p)
@@ -129,17 +129,17 @@ function train_ude_single_dataset(p, predict_ude, training_data, u0, beta_functi
 
     # Random split
 
-    #val_tpts = 5:5:length(training_data)
-    #train_tpts = setdiff(1:length(training_data), val_tpts)
+    val_tpts = 5:5:length(training_data)
+    train_tpts = setdiff(1:length(training_data), val_tpts)
 
     # Middle 20% of beta
-    beta_traj = beta_function(location, training_data)
+    #beta_traj = beta_function(location, training_data)
 
-    q40 = quantile(beta_traj, 0.4)
-    q60 = quantile(beta_traj, 0.6)
+    #q40 = quantile(beta_traj, 0.4)
+    #q60 = quantile(beta_traj, 0.6)
 
-    val_tpts   = findall(b -> q40 <= b <= q60, beta_traj)
-    train_tpts = setdiff(1:length(training_data), val_tpts)
+    #val_tpts   = findall(b -> q40 <= b <= q60, beta_traj)
+    #train_tpts = setdiff(1:length(training_data), val_tpts)
 
     # Create 1D vector to track losses during training
     train_losses = Float64[]
@@ -151,7 +151,7 @@ function train_ude_single_dataset(p, predict_ude, training_data, u0, beta_functi
     for iter in 1:maxiters_adam
 
         # Compute the loss, predicted mortalities and gradient function
-        train_l, back_all = pullback(theta -> loss_ude(theta, predict_ude, training_data, u0, train_tpts, noise, r) + regularisation(theta.nn_params), p)
+        train_l, back_all = pullback(theta -> loss_ude(theta, predict_ude, training_data, u0, train_tpts, noise, r; loss_variant=loss_variant) + regularisation(theta.nn_params), p)
         iter % 50 == 0 && println("Iteration $iter, Loss: $train_l")
         # Evaluate the gradient of the loss w.r.t p
         grad = back_all((one(train_l)))[1]
@@ -171,7 +171,7 @@ function train_ude_single_dataset(p, predict_ude, training_data, u0, beta_functi
         push!(train_losses, train_l)
 
         # Compute validation loss
-        val_l = loss_ude(p, predict_ude, training_data, u0, val_tpts, noise, r) + regularisation(p.nn_params)
+        val_l = loss_ude(p, predict_ude, training_data, u0, val_tpts, noise, r; loss_variant=loss_variant) + regularisation(p.nn_params)
         push!(val_losses, val_l)
 
         # Store best iteration (minimising validation loss)
@@ -188,32 +188,37 @@ function train_ude_single_dataset(p, predict_ude, training_data, u0, beta_functi
     # Then do LBFGS optimisation
     adtype = Optimization.AutoZygote()
     optfunc   = Optimization.OptimizationFunction(
-                 (theta, _) -> loss_ude(theta, predict_ude, training_data, u0, train_tpts, noise, r) + regularisation(theta.nn_params),
+                 (theta, _) -> loss_ude(theta, predict_ude, training_data, u0, train_tpts, noise, r; loss_variant=loss_variant) + regularisation(theta.nn_params),
                  adtype)
     optprob = Optimization.OptimizationProblem(optfunc, best_p)
 
     iter_lbfgs = Ref(0)
-    res = Optimization.solve(
-        optprob,
-        Optim.LBFGS(m=10),
-        callback = (state, train_l) -> begin
-            iter_lbfgs[] += 1
-            push!(train_losses, train_l)
+    try
+        res = Optimization.solve(
+            optprob,
+            Optim.LBFGS(m=10),
+            callback = (state, train_l) -> begin
+                iter_lbfgs[] += 1
+                push!(train_losses, train_l)
 
-            # Compute validation loss
-            val_l = loss_ude(state.u, predict_ude, training_data, u0, val_tpts, noise, r) + regularisation(state.u.nn_params)
-            push!(val_losses, val_l)
+                # Compute validation loss
+                val_l = loss_ude(state.u, predict_ude, training_data, u0, val_tpts, noise, r; loss_variant=loss_variant) + regularisation(state.u.nn_params)
+                push!(val_losses, val_l)
 
-            if val_l < best_loss
-                best_loss = val_l
-                best_p = state.u
-            end
+                if val_l < best_loss
+                    best_loss = val_l
+                    best_p = state.u
+                end
 
-            iter_lbfgs[] % 50 == 0 && println("LBFGS iter $(iter_lbfgs[]): $train_l")
-            return false
-        end,
-        maxiters = maxiters_lbfgs
-    )
+                iter_lbfgs[] % 50 == 0 && println("LBFGS iter $(iter_lbfgs[]): $train_l")
+                return false
+            end,
+            maxiters = maxiters_lbfgs
+        )
+    catch e
+        println("LBFGS failed ($e), returning best Adam parameters.")
+    end
+
 
     return best_p, train_losses, val_losses
 end

@@ -51,28 +51,34 @@ end
 RUN SYMBOLICREGRESSION.JL
 =========================================================# 
 
-function run_symbolic_regression(SR_input, SR_output, output_dir; seed=seed)
+function run_symbolic_regression(SR_input, SR_output, output_dir; seed=seed, parsimony=3, maxsize=20, complexity_of_constants=2)
     
     model = SRRegressor(
         niterations=100,
         binary_operators=[+, -, *, /],
         unary_operators=[exp],
-        maxsize = 20,
+        maxsize = maxsize,
         output_directory = output_dir,
         # Make results reproducible by disabling multithreading
         populations = 15,
         population_size = 50,
-        parsimony = 3,
-        complexity_of_constants = 2,
+        parsimony = parsimony,
+        complexity_of_constants = complexity_of_constants,
         parallelism=:serial,
         seed = seed,
         deterministic = true,
-        batching = false
+        batching = false,
+        # Don't print progress for speed (and doing on multiple seeds would merge logs)
+        progress = false,
+        # Don't write the hall of fame CSV during the search (the final hall of fame is in report(mach),
+        # saved in SR_report.jld2); with many jobs writing to the shared filesystem it makes SR ~30x slower
+        save_to_file = false,
     )
 
     # Create and train model on this data
     mach = machine(model, SR_input, SR_output)
-    fit!(mach)
+    # Disable printing for speed
+    fit!(mach, verbosity=0)
 
     r =report(mach)
 
