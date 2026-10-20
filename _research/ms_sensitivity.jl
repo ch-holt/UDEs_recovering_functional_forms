@@ -49,7 +49,7 @@ population = POPULATION[location]
 
 # Extract the ground truth (no noise)
 dataset = JLD2.load(datadir("exp_pro", "synthetic_data", "synthetic_trajectories_HQ_beta_exp",
-                             "synthetic_$(location)", "noise=0.jld2"))
+                             "synthetic_$(location)", "noise=0.0.jld2"))
 true_inf = dataset["infectious"]
 days     = collect(dataset["days"])
 
