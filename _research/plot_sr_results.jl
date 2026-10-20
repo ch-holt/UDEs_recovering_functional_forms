@@ -27,15 +27,17 @@ const MS_limit = parse(Float64, get(ARGS, 5, "0.3"))
 const multistart = true
 
 sim_name = "$(solver_name)_UDE_single_beta=$(beta_function)_adam=2500_lbfgs=2000_traindata=$(train_length)_noise=$(noise)"
+sr_root = joinpath(@__DIR__, "..", "scripts", "outputs", sim_name)
+settings = isdir(sr_root) ? filter(setting -> startswith(setting, "SR_input=") && isdir(joinpath(sr_root, setting)), readdir(sr_root)) : String[]
 
 for location in sort(collect(keys(POPULATION)))
 
     root = datadir("exp_pro","sims",  "ude_single", sim_name, "synthetic_$(location)")
     seed_folders = get_seed_folders(root, multistart, MS_limit)
 
-    for folder in seed_folders
+    for setting in settings, folder in seed_folders
 
-        output_dir = joinpath(@__DIR__, "..", "scripts", "outputs", "$(sim_name)", "synthetic_$(location)", folder)
+        output_dir = joinpath(sr_root, setting, "synthetic_$(location)", folder)
         report_path = joinpath(output_dir, "SR_report.jld2")
         if !isfile(report_path)
             println("No SR results for $(location) $(folder), skipping.")
