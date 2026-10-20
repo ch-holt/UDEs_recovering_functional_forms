@@ -198,6 +198,7 @@ for folder in seed_folders
 
     # Create output directory
     output_dir = joinpath(@__DIR__, "..", "scripts", "outputs", "$(sim_name)", sr_name(setting), "synthetic_$(location)", folder)
+    mkpath(output_dir)
 
     # Resume support: skip a seed whose SR results already exist
     if isfile(joinpath(output_dir, "SR_report.jld2"))
