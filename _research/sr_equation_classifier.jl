@@ -90,13 +90,42 @@ end
 # Split into additive terms, and terms into multiplicative factors
 ==============================================================#
 
+iscall(ex, op) = ex isa Expr && ex.head == :call && ex.args[1] == op
+negate(term)   = Expr(:call, :-, term)
+
 # a + b - c  ->  [a, b, -c]
+# x-free multipliers, x-free divisors and negation are distributed over sums, so the
+# split doesn't depend on whether SR wrote the sum expanded or factored:
+#     c * (A + B) -> [c*A, c*B],   (A + B) / c -> [A/c, B/c],   -(A + B) -> [-A, -B]
+# A multiplier or divisor containing x1 is not distributed: (0.137 + x1) * exp(...) and
+# x1 * (A + B) stay one term each.
 function summands(ex, out = Any[])
-    if ex isa Expr && ex.head == :call && ex.args[1] == :+
+    if iscall(ex, :+)
         foreach(a -> summands(a, out), ex.args[2:end])
-    elseif ex isa Expr && ex.head == :call && ex.args[1] == :- && length(ex.args) == 3
+    elseif iscall(ex, :-) && length(ex.args) == 3
         summands(ex.args[2], out)
-        push!(out, Expr(:call, :-, ex.args[3]))
+        append!(out, negate.(summands(ex.args[3])))
+    elseif iscall(ex, :-) && length(ex.args) == 2
+        append!(out, negate.(summands(ex.args[2])))
+    elseif iscall(ex, :*)
+        args   = ex.args[2:end]
+        x_args = findall(has_x, args)
+        terms  = length(x_args) == 1 ? summands(args[only(x_args)]) : Any[]
+        if length(terms) > 1
+            # exactly one factor contains x1 and it is a sum: distribute the x-free rest over it
+            k = only(x_args)
+            foreach(t -> summands(Expr(:call, :*, args[1:k-1]..., t, args[k+1:end]...), out), terms)
+        else
+            push!(out, ex)
+        end
+    elseif iscall(ex, :/) && length(ex.args) == 3
+        num, den = ex.args[2], ex.args[3]
+        terms = (has_x(num) && !has_x(den)) ? summands(num) : Any[]
+        if length(terms) > 1
+            foreach(t -> summands(Expr(:call, :/, t, den), out), terms)
+        else
+            push!(out, ex)
+        end
     else
         push!(out, ex)
     end
@@ -190,6 +219,21 @@ function run_classifier_tests()
         ("exp(-5.53 * x1) / 1.845",                                         :exact,              true),
         ("0.542 / exp(x1 / 0.1808)",                                        :exact,              true),
         ("exp(x1 * -3.0) * (0.542 / exp(x1 * 2.53))",                       :exact,              true),
+        # ground truth + correction with the sum factored: same category as expanded
+        ("0.54 * (exp(-5.5 * x1) + 0.004)",                                 :gt_plus_correction, true),
+        ("(exp(-5.5 * x1) + 0.004) / 1.85",                                 :gt_plus_correction, true),
+        ("(0.0021 + exp(x1 * -5.5) * 0.538) * 1.0",                         :gt_plus_correction, true),
+        ("0.5 * (0.002 + ((exp(-5.5 * x1) + 0.001) / 0.93))",               :gt_plus_correction, true),
+        ("0.6 - (0.1 - (0.54 * exp(-5.5 * x1)))",                           :gt_plus_correction, true),
+        ("-((-0.54 * exp(-5.5 * x1)) - 0.004)",                             :gt_plus_correction, true),
+        # negated ground-truth term: right structure, but a < 0 so no parameters
+        ("0.6 - ((0.5 * exp(-5.0 * x1)) + 0.1)",                            :gt_plus_correction, false),
+        # x-free sum as a multiplier is just a constant
+        ("(0.3 + 0.24) * exp(-5.5 * x1)",                                   :exact,              true),
+        # multipliers / divisors containing x1 are not distributed
+        ("(0.137 + x1) * exp(-5.5 * x1)",                                   :other,              false),
+        ("x1 * (exp(-5.5 * x1) + 0.004)",                                   :other,              false),
+        ("(exp(-5.5 * x1) + 0.004) / (1.0 + x1)",                           :other,              false),
         # right form, wrong parameters (nearly constant)
         ("exp(x1 * -2.2269695011946026e-7) * 0.5943123359333966",           :exact,              false),
         # real non-ground-truth shapes from the fronts
