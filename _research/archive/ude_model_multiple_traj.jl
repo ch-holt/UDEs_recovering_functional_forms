@@ -255,3 +255,245 @@ for i = 1:1
 end
 
 
+
+#========================================================
+FUNCTION TO TRAIN UDE MODEL ON MULTIPLE DATASETS
+=========================================================# 
+
+function train_ude_multiple_datasets(nn_params, predict_ude, trajectories, beta_network, st_nn, number_of_nn_inputs; maxiters_adam, maxiters_lbfgs)
+
+
+    # Create 1D vector to track total losses across all trajectories during training
+    total_losses = Float64[]
+    best_loss = Inf
+
+    # We track the best parameters for all trajectories
+    # the relationship between the parameters (e.g. NN weights) is the same across trajectories, but the NN will have different inputs
+    best_nn_params = nn_params
+
+    # Set up optimisation
+    optimised_state = Optimisers.setup(Optimisers.Adam(1e-3), nn_params)
+
+    for iter in 1:maxiters_adam
+
+        # Print progress so long-running evaluations are visible
+        println("Adam iter $iter")
+
+        # Compute the loss, predicted infectious individuals and gradient function for each synthetic trajectory
+        total_loss, total_grad = combined_loss_ude_adam(beta_network, st_nn, nn_params, number_of_nn_inputs, predict_ude, trajectories, noise, r)
+
+    	# Stop training if 5 consecutive Inf losses
+		if total_loss == Inf && length(total_losses) >= 5 && all(isinf, total_losses[end-4:end])
+			println("Unstable parameter region. Aborting...")
+			break
+		end 
+
+		if isnothing(total_grad)
+			println("No gradient found. Loss: $total_loss")
+			nn_params = best_nn_params
+			continue
+		end   
+
+        push!(total_losses, total_loss)
+
+        # Store best iteration
+        if total_loss < best_loss
+            best_loss = total_loss
+            best_nn_params = nn_params
+        end
+
+        # Update parameters using the gradient
+        optimised_state, nn_params = Optimisers.update(optimised_state, nn_params, total_grad)
+
+    end
+
+    # Then do LBFGS optimisation
+    optfunc   = Optimization.OptimizationFunction(
+                (theta, _) -> combined_loss_ude_lbfgs(beta_network, st_nn, theta, number_of_nn_inputs, predict_ude, trajectories, noise, r)[1],
+                grad = (G, theta, _)-> (G .= combined_loss_ude_lbfgs(beta_network, st_nn, theta, number_of_nn_inputs, predict_ude, trajectories, noise, r)[2])
+                )
+    optprob = Optimization.OptimizationProblem(optfunc, best_nn_params)
+
+    iter_lbfgs = Ref(0)
+
+    res = try
+        Optimization.solve(
+        optprob,
+        Optim.LBFGS(m=10),
+        callback = (state, l) -> begin
+            iter_lbfgs[] += 1
+            push!(total_losses, l)
+
+            if l < best_loss
+                best_loss = l
+                best_nn_params = state.u
+            end
+
+            iter_lbfgs[] % 50 == 0 && println("LBFGS iter $(iter_lbfgs[]): $l")
+            return false
+        end,
+        maxiters = maxiters_lbfgs
+        )
+
+    catch e
+        println("LBFGS optimisation failed with error: $e")
+        return best_nn_params, total_losses
+    end
+
+    println("LBFGS finished with retcode: $(res.retcode)") 
+
+    final_loss, _ = combined_loss_ude_lbfgs(beta_network, st_nn, res.u, number_of_nn_inputs, predict_ude, trajectories, noise, r)
+
+    if final_loss < best_loss
+        best_nn_params = res.u
+    end
+
+    return best_nn_params, total_losses
+end
+
+#=============================================================
+COMBINED LOSS FOR MULTIPLE DATASETS USING ADAM OPTIMISER
+==============================================================#
+
+function combined_loss_ude_adam(beta_network, st_nn, nn_params, number_of_nn_inputs, predict_ude, trajectories, noise, r)
+
+    gamma = 1/10
+    println("Evaluating combined loss for current parameters across $(length(trajectories)) trajectories...")
+
+    # Loop through all simulations
+    individual_losses = Float64[]
+    total_grad = zero(nn_params)
+    total_loss = 0.0
+
+    for (i, traj) in enumerate(trajectories)
+        data = traj.data
+        varying_p = traj.varying_p
+
+        # Derive beta0 specific to current trajectory
+        beta0 = varying_p.R0_reproduction * (gamma + varying_p.delta)
+
+        # Update the parameters for the current trajectory to include the varying parameters
+        p_all = ComponentArray(
+            nn_params = nn_params,
+            population = varying_p.population,
+            prevalence = varying_p.prevalence,
+            beta0 = beta0,
+            zeta = varying_p.zeta,
+            R0_reproduction = varying_p.R0_reproduction,
+            delta = varying_p.delta
+        )
+
+        # Define initial state for the current trajectory
+        E0 = 1.0
+        R0_recovered = 0.0
+        D0 = 0.0
+        I0 = max(1.0, varying_p.prevalence * varying_p.population)
+        S0 = varying_p.population - E0 - I0 - R0_recovered - D0
+        u0 = [S0, E0, I0, R0_recovered, D0]
+
+        println("Evaluating trajectory $i")
+
+        # Compute the loss and gradient for the current trajectory
+        tpts = eachindex(data)
+        l, back_all = pullback(theta -> loss_ude(theta, predict_ude, data, u0, tpts, noise, r), p_all)
+
+        if !isfinite(l)
+            return 1e20, nothing
+        end
+
+        # Evaluate the gradient of the loss for the current trajectory w.r.t p_all
+        grad = back_all((one(l)))[1]
+
+        if isnothing(grad) || isnothing(grad.nn_params)
+            return total_loss + l, nothing
+        end
+
+        println("Loss for trajectory $i: $l")
+        push!(individual_losses, l)
+
+        total_loss += l
+        total_grad .+= grad.nn_params
+
+    end
+
+    # Average loss and gradient across all trajectories and datapoints
+    total_loss /= length(trajectories)
+    total_grad ./= length(trajectories)
+
+    # add regularisation
+    reg_loss, reg_back = pullback(theta -> regularisation(theta), nn_params)
+    reg_grad = reg_back(one(reg_loss))[1]
+
+    total_loss += reg_loss
+    total_grad .+= reg_grad
+
+
+
+    return total_loss, total_grad
+end
+
+#=============================================================
+COMBINED LOSS FOR MULTIPLE DATASETS USING LBFGS
+==============================================================#
+
+function combined_loss_ude_lbfgs(beta_network, st_nn, nn_params, number_of_nn_inputs, predict_ude, trajectories, noise, r)
+
+    gamma = 1/10
+    println("Evaluating combined LBFGS loss for current parameters across $(length(trajectories)) trajectories...")
+    total_grad = zero(nn_params)
+    total_loss = 0.0
+
+    for (i, traj) in enumerate(trajectories)
+        println(i)
+        data = traj.data
+        varying_p = traj.varying_p
+
+        # Derive beta0 specific to current trajectory
+        beta0 = varying_p.R0_reproduction * (gamma + varying_p.delta)
+
+        # Update the parameters for the current trajectory to include the varying parameters
+        p_all = ComponentArray(
+            nn_params = nn_params,
+            population = varying_p.population,
+            prevalence = varying_p.prevalence,
+            beta0 = beta0,
+            zeta = varying_p.zeta,
+            R0_reproduction = varying_p.R0_reproduction,
+            delta = varying_p.delta
+        )
+
+        # Define initial state for the current trajectory
+        E0 = 1.0
+        R0_recovered = 0.0
+        D0 = 0.0
+        I0 = max(1.0, varying_p.prevalence * varying_p.population)
+        S0 = varying_p.population - E0 - I0 - R0_recovered - D0
+        u0 = [S0, E0, I0, R0_recovered, D0]
+
+        println("Evaluating trajectory $i")
+
+        tpts = eachindex(data)
+        l, back_all = pullback(theta -> loss_ude(theta, predict_ude, data, u0, tpts, noise, r), p_all)
+        if !isfinite(l)
+           error("ODE solve failed for trajectory $i. Loss: $l")
+        end
+        grad = back_all((one(l)))[1]
+        if isnothing(grad) || isnothing(grad.nn_params)
+            error("No gradient available for trajectory $i")
+        end
+        println("Loss for trajectory $i: $l")
+
+        total_loss += l
+        total_grad .+= grad.nn_params
+    end
+
+    total_loss /= length(trajectories)
+    total_grad ./= length(trajectories)
+
+    reg_loss, reg_back = pullback(theta -> regularisation(theta), nn_params)
+    reg_grad = reg_back(one(reg_loss))[1]
+    total_loss += reg_loss
+    total_grad .+= reg_grad
+
+    return total_loss, total_grad
+end

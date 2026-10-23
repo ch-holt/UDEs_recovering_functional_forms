@@ -93,23 +93,10 @@ function run_seird_functional_form(beta_function, location, fixed_p, varying_p, 
 end
 
 #========================================================
-DEFINE NUMBER OF NEURAL NETWORK INPUTS
-=========================================================# 
-
-nn_inputs(population::Real, I, ::Val{1}) = [I / population]
-
-function nn_inputs(p, I, ::Val{4})
-    delta_norm = (log(p.delta) - log(1e-6)) / (log(1e-2) - log(1e-6))
-    beta0_norm = (p.R0_reproduction - 1.2) / (6.0 - 1.2)
-    zeta_norm  = p.zeta / 0.05
-    return [beta0_norm, zeta_norm, delta_norm, I / p.population]
-end
-
-#========================================================
 DEFINE UDE MODEL
 =========================================================# 
-function make_seird_nn(beta_network, st, sigma, gamma, delta, population, input_size::Int)
-    valn = Val(input_size)
+function make_seird_nn(beta_network, st, sigma, gamma, delta, population)
+
     function seird_nn!(du, u, p, t)
         S, E, I, R, D = u
         N = S + E + I + R
@@ -119,7 +106,7 @@ function make_seird_nn(beta_network, st, sigma, gamma, delta, population, input_
             return
         end
 
-        nn_input = nn_inputs(population, I, valn)
+        nn_input = [I / population]
         beta = beta_network(nn_input, p.nn_params, st)[1][1]
 
         du[1] = -beta * S * I / N
@@ -132,18 +119,50 @@ function make_seird_nn(beta_network, st, sigma, gamma, delta, population, input_
 end
 
 #========================================================
+DEFINE BEHAVIOURAL UDE MODEL 1
+=========================================================# 
+function make_seird_nn_behaviour_model1(contact_network, st, sigma, gamma, delta, population)
+    
+
+    function seird_nn!(du, u, p, t)
+        S, E, I, R, D, c = u
+        N = S + E + I + R
+
+        if N <= 0
+            du .= 0.0
+            return
+        end
+
+        dI = sigma * E - (gamma + delta) * I
+        nn_input = [I / population, dI, c]
+
+        rho = 1 / (1 + exp(-p.logit_rho))
+        du[1] = -rho * c * S * I / N
+        du[2] =  rho * c * S * I / N - sigma * E
+        du[3] = sigma * E - (gamma + delta) * I
+        du[4] = gamma * I
+        du[5] = delta * I
+        # New equation for contact dynamics
+        du[6] = c * contact_network(nn_input, p.nn_params, st)[1][1]  
+
+    end
+    return seird_nn!
+end
+
+#========================================================
 MAKE PREDICTION USING UDE MODEL
 =========================================================# 
 
-function make_predict_ude(prob, train_length, solver; reltol=nothing)
+# Function to make UDE predictions - default return infections only
+function make_predict_ude(prob, train_length, solver; states=3)
     function predict_ude(p_all, u0)
         new_prob = remake(prob, p = p_all, u0 = u0)
-        sol = isnothing(reltol) ? solve(new_prob, solver, saveat=1.0, dense=false) :
-                                   solve(new_prob, solver, saveat=1.0, dense=false, reltol=reltol)
+        sol = solve(new_prob, solver, saveat=1.0, dense=false)
         if sol.retcode != ReturnCode.Success || length(sol.t) < train_length
             return nothing
         end
-        return sol[3, 1:train_length]
+        # Array(sol) first: Zygote has no adjoint for slicing an ODESolution with a colon
+        return Array(sol)[states, 1:train_length]
     end
     return predict_ude
 end
@@ -151,8 +170,8 @@ end
 #========================================================
 DEFINE UDE MODEL
 =========================================================# 
-function make_seird_sr(mach, r, sigma, gamma, delta, population, input_size::Int)
-    valn = Val(input_size)
+function make_seird_sr(mach, r, sigma, gamma, delta, population)
+
     function seird_sr!(du, u, p, t)
         S, E, I, R, D = u
         N = S + E + I + R
@@ -162,7 +181,7 @@ function make_seird_sr(mach, r, sigma, gamma, delta, population, input_size::Int
             return
         end
 
-        nn_input = reshape(nn_inputs(population, I, valn), 1, :)
+        nn_input = reshape([I / population], 1, :)
         beta = predict(mach, (data=nn_input, idx=r.best_idx))[1]
 
         du[1] = -beta * S * I / N

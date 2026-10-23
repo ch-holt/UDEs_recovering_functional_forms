@@ -118,6 +118,121 @@ function generate_synthetic_data(fixed_p, varying_p, obs_length, location, beta_
 end
 
 #========================================================
+FUNCTION TO GENERATE BASELINE CONTACT DATA
+=========================================================#
+
+# Function to calculate the wieghted IQR
+function weighted_quantile(values, weights, q)
+    # sort values and weights by values
+    sorted_idx = sortperm(values)
+    vals = values[sorted_idx]
+    # make a cumulative sum of the weights
+    cumwts = cumsum(weights[sorted_idx])
+    # find the value corresponding to the desired quantile
+    target = q * cumwts[end]
+    # returns the value that gives this cumulative weight
+    return vals[findfirst(cumwts .>= target)]
+end
+
+# Function to find the mean and IQR for each division in the EpiStorm data and save to a JLD2 file
+function generate_division_contact()
+    # Load EpiStorm data
+    epistorm_data = CSV.read(datadir("exp_raw", "imputed-resp2.csv"), DataFrame)
+    # group by division and compute weighted mean and IQR
+    # take each region
+    results = combine(groupby(epistorm_data, :hh_loc_reg9)) do df
+        contacts = df[!, Symbol("total.contacts")]
+        weights = df[!, :weight_ipsos]
+        # evaluate the weighted mean for that region 
+        weighted_mean = sum(contacts .* weights) / sum(weights)
+        # Do IQR
+        q25 = weighted_quantile(contacts, weights, 0.25)
+        q75 = weighted_quantile(contacts, weights, 0.75)
+        # output a row
+        (mean = weighted_mean, q25 = q25, q75 = q75, n = nrow(df))
+    end
+
+    JLD2.save(datadir("exp_pro", "synthetic_data", "baseline_contacts_division.jld2"), "results", results)
+
+    return results
+
+end
+
+# map the states to the respective divisions
+const STATE_TO_DIVISION = Dict(
+    # New England
+    "CT" => "New England", "ME" => "New England", "MA" => "New England",
+    "NH" => "New England", "RI" => "New England", "VT" => "New England",
+
+    # Mid-Atlantic
+    "NJ" => "Mid-Atlantic", "NY" => "Mid-Atlantic", "PA" => "Mid-Atlantic",
+
+    # East North Central
+    "IL" => "East-North Central", "IN" => "East-North Central",
+    "MI" => "East-North Central", "OH" => "East-North Central",
+    "WI" => "East-North Central",
+
+    # West North Central
+    "IA" => "West-North Central", "KS" => "West-North Central",
+    "MN" => "West-North Central", "MO" => "West-North Central",
+    "NE" => "West-North Central", "ND" => "West-North Central",
+    "SD" => "West-North Central",
+
+    # South Atlantic
+    "DE" => "South Atlantic", "FL" => "South Atlantic", "GA" => "South Atlantic",
+    "MD" => "South Atlantic", "NC" => "South Atlantic", "SC" => "South Atlantic",
+    "VA" => "South Atlantic", "WV" => "South Atlantic", "DC" => "South Atlantic",
+
+    # East South Central
+    "AL" => "East-South Central", "KY" => "East-South Central",
+    "MS" => "East-South Central", "TN" => "East-South Central",
+
+    # West South Central
+    "AR" => "West-South Central", "LA" => "West-South Central",
+    "OK" => "West-South Central", "TX" => "West-South Central",
+
+    # Mountain
+    "AZ" => "Mountain", "CO" => "Mountain", "ID" => "Mountain",
+    "MT" => "Mountain", "NV" => "Mountain", "NM" => "Mountain",
+    "UT" => "Mountain", "WY" => "Mountain",
+
+    # Pacific
+    "AK" => "Pacific", "CA" => "Pacific", "HI" => "Pacific",
+    "OR" => "Pacific", "WA" => "Pacific"
+)
+
+# Function to sample the baseline mean contacts for a state
+function baseline_contacts(locations, seed)
+    # Retrieve JLD2 to save the baseline contacts for each state
+    path = datadir("exp_raw", "estimated_ground_truth_parameters.jld2")
+    ground_truth = JLD2.load(path)
+
+    # Set seed for reproducibility
+    rng = Xoshiro(seed)
+
+    # Load the baseline contacts for each division
+    division_contacts = JLD2.load(datadir("exp_pro", "synthetic_data", "baseline_contacts_division.jld2"))["results"]
+    
+    C0 = Dict{String, Float32}()
+
+    # Loop through the locations in sorted order for reproducibility
+    for location in sort(collect(locations))
+        # Map the state to the respective division
+        division = STATE_TO_DIVISION[location]
+        # Extract the IQR bounds for each division
+        division_row = filter(row -> row.hh_loc_reg9 == division, division_contacts)
+        isempty(division_row) && error("No baseline contacts row for division $(division) (state $(location))")
+        Lbound=Float32(division_row.q25[1])
+        Ubound=Float32(division_row.q75[1])
+        # Uniform distribution for c0 values between LBound and UBound
+        C0[location] = rand(rng, Uniform(Lbound, Ubound))
+    end
+    ground_truth["C0"] = C0
+    JLD2.save(path, ground_truth)
+
+end
+
+#========================================================
 FUNCTION TO GENERATE GROUND TRUTH BEHAVIOURAL DATA
 =========================================================#
 
@@ -200,7 +315,7 @@ const sigma = 1/3
 const gamma = 1/10
 
 noise_levels = [0, 0.01, 0.025, 0.05, 0.1, 0.2, 0.25, 0.3, 0.35, 0.4]
-beta_function = [beta_exp, beta_rational, beta_mixed]
+const beta_function = [beta_exp, beta_rational, beta_mixed]
 contact_function = [contacts_exp, contacts_rational, contacts_mixed]
 
 # Loop through each combination of parameters for each state and generate synthetic data
@@ -229,9 +344,11 @@ for location in keys(POPULATION)
                                     zeta = zeta)
 
         # Generate data and save to JLD2 file
-        generate_synthetic_data(fixed_p, varying_p, 365, location, beta_function, noise_levels)
+        #generate_synthetic_data(fixed_p, varying_p, 365, location, beta_function, noise_levels)
 
     end
 end
-generate_ground_truth_beta(beta_function)
+#generate_division_contact()
+baseline_contacts(collect(keys(POPULATION)), 1234)
+#generate_ground_truth_beta(beta_function)
 generate_ground_truth_contacts(contact_function)

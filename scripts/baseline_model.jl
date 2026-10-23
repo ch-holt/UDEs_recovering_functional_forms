@@ -131,9 +131,9 @@ for (train_length, noise) in sweep_combos
         p_init = ComponentArray(beta0 = beta0)
 
         prob = ODEProblem(make_seird_baseline(sigma, gamma, delta), u0, tspan, p_init)
-        predict_ude = make_predict_ude(prob, train_length, BASELINE_SOLVER)
+        predict_ude = make_predict_ude(prob, train_length, BASELINE_SOLVER, states=3)
 
-        beta0_hat, train_losses, elapsed = train_baseline_single_dataset(p_init, predict_ude, training_data, u0, noise, r; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, adam_learning_rate=adam_learning_rate)
+        beta0_hat, train_losses, elapsed = train_baseline_single_dataset(p_init, predict_ude, training_data, u0, noise; maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, adam_learning_rate=adam_learning_rate)
 
         #========================================================
         UNCERTAINTY ON beta0 (Laplace / delta-method approximation)
