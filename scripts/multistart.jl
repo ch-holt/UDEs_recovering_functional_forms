@@ -12,10 +12,7 @@ using CSV
 # Call module
 using UDE_FUNCTIONAL_FORMS
 
-# Where does this function belong (C&P from summarise_results.jl)
-# loss_variant: the variant the sim folder name says was used (nothing if not a loss-variant run);
-# a "loss_variant" saved in the results takes precedence
-function summarise_results(sim_name_dir::String, population::Real; loss_variant=nothing)
+function summarise_results(sim_name_dir::String, population::Real)
 
     rows = []
     # Each seed run is stored in simulation_seed=* subfolders
@@ -35,17 +32,9 @@ function summarise_results(sim_name_dir::String, population::Real; loss_variant=
         loss_I_grid     = get(data, "loss_I_grid",     missing)
         val_losses      = get(data, "val_losses",      missing)
         best_val_loss = ismissing(val_losses) ? missing : minimum(val_losses)
-        # Jointly estimated noise level (missing for noise=0 and for fixed-r runs)
+        # Jointly estimated noise level (missing for noise=0)
         phi_hat         = get(data, "phi_hat",         missing)
-        # For the bounded variants, recompute phi_hat from the trained log_phi with the current phi_effective
-        # (1/sqrt(r_used), at most 10), as older runs saved exp(log_phi) + 1e-3, which ignores the floor on r
-        variant = get(data, "loss_variant", loss_variant)
-        if haskey(BOUNDED_PHI_MIN, something(variant, "")) && !ismissing(phi_hat) && haskey(data, "p")
-            phi_hat = phi_effective(data["p"].log_phi, variant)
-        end
-        phi_init       = get(data, "phi_init",        missing)
-        # poisson_switch only: final r >= POISSON_SWITCH_R (missing for other variants and older runs)
-        poisson_regime  = get(data, "poisson_regime",  missing)
+        phi_init        = get(data, "phi_init",        missing)
 
         # "prediction" is the long-term solve (3 years, row 3 = infectious compartment);
         # check feasibility over the full saved horizon.
@@ -63,7 +52,6 @@ function summarise_results(sim_name_dir::String, population::Real; loss_variant=
             best_val_loss   = best_val_loss,
             phi_hat         = phi_hat,
             phi_init        = phi_init,
-            poisson_regime  = poisson_regime,
             max_forecast    = max_forecast,
             feasible        = feasible,
         ))
@@ -106,9 +94,7 @@ for sim in sort(readdir(sims_root))
         sim_name_dir = joinpath(sim_root_dir, loc_folder)
         population   = POPULATION[location]
 
-        # Extract and save summary once per noise level
-        variant  = something(m[:estphi], "") == "_estphi_randinit_bounded" ? "bounded" : nothing
-        df       = summarise_results(sim_name_dir, population; loss_variant=variant)
+        df       = summarise_results(sim_name_dir, population)
         if nrow(df) == 0
             println("No seed results found in $(sim_name_dir), skipping.")
             continue

@@ -46,7 +46,7 @@ const solver_name = "autotsit5"
 # Classifier settings
 const PARAM_RTOL = 0.2           # a and b within 20% of the truth
 const REQUIRE_PARAMS = true      # ground truth on the front must also have the right a and b
-const REBUILD_CLASSIFIED = false # set true once after changing the classifier
+const REBUILD_CLASSIFIED = true # set true once after changing the classifier
 
 sim_name = "$(solver_name)_UDE_single_beta=$(beta_function)_adam=2500_lbfgs=2000_traindata=$(train_length)_noise=$(noise)"
 save_dir = datadir("exp_pro", "sr_comparison", sim_name)
