@@ -87,9 +87,8 @@ function beta0_uncertainty(best_p, predict_ude, training_data, u0, noise)
     tpts = eachindex(training_data)
 
     if noise == 0
-        # loss_ude is NMSE here, not a Gaussian NLL (it's scaled by an arbitrary
-        # normalising factor), so go via the standard nonlinear least squares
-        # (delta-method) formula instead of differentiating it directly.
+        # loss_ude is NMSE - use standard nonlinear least squares
+        # (delta-method) formula
         J = ForwardDiff.jacobian(p -> predict_ude(p, u0)[tpts], best_p)
         resid = predict_ude(best_p, u0)[tpts] .- training_data[tpts]
         sigma2_hat = sum(resid .^ 2) / (length(tpts) - 1)
