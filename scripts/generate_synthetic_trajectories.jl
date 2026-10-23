@@ -348,7 +348,7 @@ for location in keys(POPULATION)
 
     end
 end
-#generate_division_contact()
+generate_division_contact()
 baseline_contacts(collect(keys(POPULATION)), 1234)
-#generate_ground_truth_beta(beta_function)
+generate_ground_truth_beta(beta_function)
 generate_ground_truth_contacts(contact_function)
