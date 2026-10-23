@@ -25,7 +25,7 @@ using UDE_FUNCTIONAL_FORMS
 MAIN FUNCTION TO TRAIN THE UDE AND SAVE THE RESULTS
 =========================================================# 
 
-function run_model(sim_name, contact_function, beta_function, rho_true, location, data_I, true_data_I, data_c, train_length, u0, seed, predict_ude, contact_network, prob_ude, noise, r, solver; maxiters_adam, maxiters_lbfgs, adam_learning_rate, number_of_nn_inputs=1, model_name, days, delta, population)
+function run_model(sim_name, contact_function, beta_function, rho_true, location, data_I, true_data_I, data_c, train_length, u0, seed, predict_ude, contact_network, prob_ude, noise, r, solver; maxiters_adam, maxiters_lbfgs, adam_learning_rate, number_of_nn_inputs=1, model_name, days, delta, population, dI_scale)
     println("Starting run: on thread $(Threads.threadid())")
     t_start = time()
     rng = Random.seed!(seed)
@@ -75,7 +75,7 @@ function run_model(sim_name, contact_function, beta_function, rho_true, location
     dI_hat = sigma .* E_hat .- (gamma + delta) .* I_hat
 
     # NN inputs for the contact network
-    nn_input_traj = permutedims(hcat(I_hat ./ population, dI_hat, c_hat_full))
+    nn_input_traj = permutedims(hcat(I_hat ./ population, dI_hat ./ dI_scale, c_hat_full))
     g_traj = vec(contact_network(nn_input_traj, p_trained.nn_params, st)[1])
 
     # Infectious trajectory fit
@@ -126,9 +126,11 @@ const solver = AutoTsit5(Rosenbrock23())
 
 # Number of seeds per location (seeds 1:n_seeds) - default 100; fewer only for timing runs
 const n_seeds = parse(Int, get(ARGS, 5, "100"))
+# Scaling of the Delta I input to the NN - "none" (raw counts per day) or "N0" (divided by the initial population)
+const dI_scaling = get(ARGS, 7, "none")
 
 # print settings
-println("Settings: contact=$(contact_function), noise=$(noise), train_length=$(train_length)")
+println("Settings: contact=$(contact_function), noise=$(noise), train_length=$(train_length), dI_scaling=$(dI_scaling)")
 
 # Define the timespan for the ODE solver
 tspan = [1, train_length]
@@ -169,7 +171,7 @@ const r = noise == 0 ? Inf : 1 / noise^2
 
 
 model_name = "ude_behaviour_model1"
-sim_name = "UDE_behaviour_model1_contact=$(contact_function)_traindata=$(train_length)_noise=$(noise)"
+sim_name = "UDE_behaviour_model1_contact=$(contact_function)_traindata=$(train_length)_noise=$(noise)_dI=$(dI_scaling)"
 
 if !isdir(datadir("exp_pro","sims", model_name, sim_name))
     mkpath(datadir("exp_pro","sims", model_name, sim_name))
@@ -219,6 +221,9 @@ rho_true = beta0 / c0
 # Define initial state
 u0 = [S0, E0, I0, R0_recovered, D0, c0]
 
+# Divisor for the Delta I input to the NN
+dI_scale = dI_scaling == "N0" ? population : dI_scaling == "none" ? 1.0 : error("dI_scaling must be \"none\" or \"N0\"")
+
 # run the model on multiple threads
 Threads.@threads for i = 1:n_seeds
     # Resume support: skip a seed whose results already exist, so a rerun (e.g. after
@@ -237,7 +242,7 @@ Threads.@threads for i = 1:n_seeds
         local contact_network, p_nn_temp, st_nn = build_neural_network(rng, hidden_dims, input_size, output_size,
                                     activation_function, final_activation_function)
 
-        local seird_nn! = make_seird_nn_behaviour_model1(contact_network, st_nn, sigma, gamma, delta, population)
+        local seird_nn! = make_seird_nn_behaviour_model1(contact_network, st_nn, sigma, gamma, delta, population; dI_scale=dI_scale)
         local prob_ude = ODEProblem(seird_nn!, u0, tspan, p_nn_temp)
         # make prediction but return all states
         local predict_ude = make_predict_ude(prob_ude, train_length, solver; states=:)
@@ -245,7 +250,7 @@ Threads.@threads for i = 1:n_seeds
         run_model(sim_name, contact_function, beta_function, rho_true, location, data_I, true_data_I, data_c,train_length, u0, i, predict_ude, contact_network, prob_ude, noise, r, solver;
             maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs,
             number_of_nn_inputs=number_of_nn_inputs, adam_learning_rate=adam_learning_rate,
-            model_name=model_name, days=days, delta=delta, population=population)
+            model_name=model_name, days=days, delta=delta, population=population, dI_scale=dI_scale)
     catch e
         println("Error occurred for seed $(i): $e")
     end
