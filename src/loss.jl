@@ -41,7 +41,7 @@ end
 # Loss function for behavioural observations
 # Note: will need to change this when we introduce noisy data
 # Note: need to think about whether we normalise
-loss_contacts(pred_c, data, tpts) = loss_nmse(pred_c[tpts], data[tpts], norm=false)
+loss_contacts(pred_c, data, tpts) = loss_nmse(pred_c[tpts], data[tpts], norm=true)
 
 function loss_ude(p_all, predict_ude, data, u0, tpts, noise)
     pred = predict_ude(p_all, u0)
