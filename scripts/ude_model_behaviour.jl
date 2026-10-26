@@ -62,7 +62,8 @@ function run_model(sim_name, contact_function, beta_function, rho_true, location
 
     # Evaluate final long term results
     long_term_prob= remake(prob_ude, p = p_trained, tspan = (1.0, 3*365.0), u0 = u0)
-    long_term_pred = solve(long_term_prob, solver, saveat=1, dense = false)
+    long_term_sol = solve(long_term_prob, solver, saveat=1, dense = false, verbose = false)
+
 
     # If the solve stops early, pad the missing days with NaN so the seed is still saved
     solve_failed = !SciMLBase.successful_retcode(long_term_sol)
