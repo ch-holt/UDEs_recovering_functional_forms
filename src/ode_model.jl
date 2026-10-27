@@ -121,7 +121,7 @@ end
 #========================================================
 DEFINE BEHAVIOURAL UDE MODEL 1
 =========================================================# 
-function make_seird_nn_behaviour_model1(contact_network, st, sigma, gamma, delta, population; dI_scale=1.0)
+function make_seird_nn_behaviour_model1(contact_network, st, sigma, gamma, delta, population; dI_scale=1.0, c_scale=1.0)
     
 
     function seird_nn!(du, u, p, t)
@@ -134,8 +134,8 @@ function make_seird_nn_behaviour_model1(contact_network, st, sigma, gamma, delta
         end
 
         dI = sigma * E - (gamma + delta) * I
-        # dI_scale = 1 (raw) or the initial population N(0)
-        nn_input = [I / population, dI / dI_scale, c]
+        # dI_scale = 1 (raw) or the initial population N(0); c_scale = 1 (raw), 100 or the sum of the training contacts
+        nn_input = [I / population, dI / dI_scale, c / c_scale]
 
         rho = 1 / (1 + exp(-p.logit_rho))
         du[1] = -rho * c * S * I / N
