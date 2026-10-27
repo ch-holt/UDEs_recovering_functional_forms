@@ -56,6 +56,7 @@ function run_model(sim_name, contact_function, beta_function, rho_true, location
     # cap the number of times we can reinitialis
     n_reinit = 0
     while l_init > 1e4 && n_reinit < 100
+        n_reinit += 1
         println("Unstable initial parameterization. Restarting..., $l_init")
         p, st = Lux.setup(rng, contact_network)
         p = ComponentArray(p)
