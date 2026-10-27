@@ -25,7 +25,7 @@ using UDE_FUNCTIONAL_FORMS
 MAIN FUNCTION TO TRAIN THE UDE AND SAVE THE RESULTS
 =========================================================# 
 
-function run_model(sim_name, contact_function, beta_function, rho_true, location, data_I, true_data_I, data_c, train_length, u0, seed, predict_ude, contact_network, prob_ude, noise, r, solver; maxiters_adam, maxiters_lbfgs, adam_learning_rate, number_of_nn_inputs=1, model_name, days, delta, population, dI_scale)
+function run_model(sim_name, contact_function, beta_function, rho_true, location, data_I, true_data_I, data_c, train_length, u0, seed, predict_ude, contact_network, prob_ude, noise, r, solver; maxiters_adam, maxiters_lbfgs, adam_learning_rate, number_of_nn_inputs=1, model_name, days, delta, population, dI_scale, c_scale)
     println("Starting run: on thread $(Threads.threadid())")
     t_start = time()
     rng = Random.seed!(seed)
@@ -100,7 +100,7 @@ function run_model(sim_name, contact_function, beta_function, rho_true, location
     dI_hat = sigma .* E_hat .- (gamma + delta) .* I_hat
 
     # NN inputs for the contact network
-    nn_input_traj = permutedims(hcat(I_hat ./ population, dI_hat ./ dI_scale, c_hat_full/100))
+    nn_input_traj = permutedims(hcat(I_hat ./ population, dI_hat ./ dI_scale, c_hat_full ./ c_scale))
     g_traj = vec(contact_network(nn_input_traj, p_trained.nn_params, st)[1])
 
     # Infectious trajectory fit
@@ -125,7 +125,7 @@ function run_model(sim_name, contact_function, beta_function, rho_true, location
 		"location", location, "population", population, "p", p_trained, "train_losses", train_losses_final, "val_losses", val_losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_hat,
 		"contact_prediction", c_hat, "NN_approx", g_traj, "days", days, "seed", seed, "noise", noise, "loss_traj_noisy", loss_traj_noisy, "loss_traj_true", loss_traj_true, "loss_contacts", loss_contacts, "loss_beta", loss_beta,
         "phi_init", phi_init, "phi_hat", phi_hat, "rho_init", rho_init, "rho_hat", rho_hat, "rho_true", rho_true, "rho_rel_error", rho_rel_error,"solve_failed", solve_failed, "n_days_solved", n_days_solved,
-        "n_reinit", n_reinit, "l_init", l_init, "elapsed_seconds", elapsed)
+        "n_reinit", n_reinit, "l_init", l_init, "dI_scale", dI_scale, "c_scale", c_scale, "elapsed_seconds", elapsed)
 
 	println("Finished run: $(location) on thread $(Threads.threadid())")
 
@@ -153,9 +153,11 @@ const solver = AutoTsit5(Rosenbrock23())
 const n_seeds = parse(Int, get(ARGS, 5, "100"))
 # Scaling of the Delta I input to the NN - "none" (raw counts per day) or "N0" (divided by the initial population)
 const dI_scaling = get(ARGS, 7, "none")
+# Scaling of the contact input to the NN - "none" (raw), "100" (divided by 100) or "sum" (divided by the sum of the training contacts)
+const c_scaling = get(ARGS, 8, "none")
 
 # print settings
-println("Settings: contact=$(contact_function), noise=$(noise), train_length=$(train_length), dI_scaling=$(dI_scaling)")
+println("Settings: contact=$(contact_function), noise=$(noise), train_length=$(train_length), dI_scaling=$(dI_scaling), c_scaling=$(c_scaling)")
 
 # Define the timespan for the ODE solver
 tspan = [1, train_length]
@@ -196,7 +198,7 @@ const r = noise == 0 ? Inf : 1 / noise^2
 
 
 model_name = "ude_behaviour_model1"
-sim_name = "UDE_behaviour_model1_contact=$(contact_function)_traindata=$(train_length)_noise=$(noise)_dI=$(dI_scaling)_c_loss_norm_reinit_c_norm_100"
+sim_name = "UDE_behaviour_model1_contact=$(contact_function)_traindata=$(train_length)_noise=$(noise)_dI=$(dI_scaling)_c=$(c_scaling)_c_loss_norm_reinit"
 
 if !isdir(datadir("exp_pro","sims", model_name, sim_name))
     mkpath(datadir("exp_pro","sims", model_name, sim_name))
@@ -249,6 +251,9 @@ u0 = [S0, E0, I0, R0_recovered, D0, c0]
 
 # Divisor for the Delta I input to the NN
 dI_scale = dI_scaling == "N0" ? population : dI_scaling == "none" ? 1.0 : error("dI_scaling must be \"none\" or \"N0\"")
+# Divisor for the contact input to the NN (only uses the training period)
+c_scale = c_scaling == "none" ? 1.0 : c_scaling == "100" ? 100.0 : c_scaling == "sum" ? sum(data_c[1:train_length]) :
+          error("c_scaling must be \"none\", \"100\" or \"sum\"")
 
 # run the model on multiple threads
 Threads.@threads for i = 1:n_seeds
@@ -268,7 +273,7 @@ Threads.@threads for i = 1:n_seeds
         local contact_network, p_nn_temp, st_nn = build_neural_network(rng, hidden_dims, input_size, output_size,
                                     activation_function, final_activation_function)
 
-        local seird_nn! = make_seird_nn_behaviour_model1(contact_network, st_nn, sigma, gamma, delta, population; dI_scale=dI_scale)
+        local seird_nn! = make_seird_nn_behaviour_model1(contact_network, st_nn, sigma, gamma, delta, population; dI_scale=dI_scale, c_scale=c_scale)
         local prob_ude = ODEProblem(seird_nn!, u0, tspan, p_nn_temp)
         # make prediction but return all states
         local predict_ude = make_predict_ude(prob_ude, train_length, solver; states=:)
@@ -276,7 +281,7 @@ Threads.@threads for i = 1:n_seeds
         run_model(sim_name, contact_function, beta_function, rho_true, location, data_I, true_data_I, data_c,train_length, u0, i, predict_ude, contact_network, prob_ude, noise, r, solver;
             maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs,
             number_of_nn_inputs=number_of_nn_inputs, adam_learning_rate=adam_learning_rate,
-            model_name=model_name, days=days, delta=delta, population=population, dI_scale=dI_scale)
+            model_name=model_name, days=days, delta=delta, population=population, dI_scale=dI_scale, c_scale=c_scale)
     catch e
         println("Error occurred for seed $(i): $e")
     end
