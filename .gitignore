@@ -45,3 +45,5 @@ plot_infections_vs_contacts.jl
 sr_comparison_metaprompt.md
 benchmark_nll_formulations.jl
 present_results_sr_settings.jl
+behaviour_evaluation_metaprompt.md
+present_results_behaviour.jl
