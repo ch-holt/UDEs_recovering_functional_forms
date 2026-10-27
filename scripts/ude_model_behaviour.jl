@@ -50,6 +50,24 @@ function run_model(sim_name, contact_function, beta_function, rho_true, location
     training_data_I = data_I[1:train_length]
     training_data_c = data_c[1:train_length]
     loss_fn = (θ, tpts) -> loss_ude_behaviour(θ, predict_ude, training_data_I, training_data_c, u0, tpts, noise)
+
+    # Make sure to start with a stable parameterisation
+    l_init = loss_fn(p_init, 1:train_length)
+    # cap the number of times we can reinitialis
+    n_reinit = 0
+    while l_init > 1e4 && n_reinit < 100
+        n_reinit += 1
+        println("Unstable initial parameterization. Restarting..., $l_init")
+        p, st = Lux.setup(rng, contact_network)
+        p = ComponentArray(p)
+        p = Float64.(p)
+        phi_init = exp(rand(rng, Uniform(log(1e-3), log(1.0))))
+        rho_init = rand(rng, Uniform(0.0, 1.0))
+        p_init = noise == 0 ? ComponentArray(nn_params = p, logit_rho = log(rho_init / (1 - rho_init))) :
+                            ComponentArray(nn_params = p, log_phi = log(phi_init), logit_rho = log(rho_init / (1 - rho_init)))
+        l_init = loss_fn(p_init, 1:train_length)
+    end
+
     p_trained, train_losses_final, val_losses_final = train_ude_single_dataset(p_init, loss_fn, length(training_data_I); maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, adam_learning_rate=adam_learning_rate)
 
     # Recover the jointly estimated noise level (only estimated when noise>0)
@@ -107,7 +125,7 @@ function run_model(sim_name, contact_function, beta_function, rho_true, location
 		"location", location, "population", population, "p", p_trained, "train_losses", train_losses_final, "val_losses", val_losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_hat,
 		"contact_prediction", c_hat, "NN_approx", g_traj, "days", days, "seed", seed, "noise", noise, "loss_traj_noisy", loss_traj_noisy, "loss_traj_true", loss_traj_true, "loss_contacts", loss_contacts, "loss_beta", loss_beta,
         "phi_init", phi_init, "phi_hat", phi_hat, "rho_init", rho_init, "rho_hat", rho_hat, "rho_true", rho_true, "rho_rel_error", rho_rel_error,"solve_failed", solve_failed, "n_days_solved", n_days_solved,
-        "elapsed_seconds", elapsed)
+        "n_reinit", n_reinit, "l_init", l_init, "elapsed_seconds", elapsed)
 
 	println("Finished run: $(location) on thread $(Threads.threadid())")
 
@@ -178,7 +196,7 @@ const r = noise == 0 ? Inf : 1 / noise^2
 
 
 model_name = "ude_behaviour_model1"
-sim_name = "UDE_behaviour_model1_contact=$(contact_function)_traindata=$(train_length)_noise=$(noise)_dI=$(dI_scaling)_c_loss_norm"
+sim_name = "UDE_behaviour_model1_contact=$(contact_function)_traindata=$(train_length)_noise=$(noise)_dI=$(dI_scaling)_c_loss_norm_reinit"
 
 if !isdir(datadir("exp_pro","sims", model_name, sim_name))
     mkpath(datadir("exp_pro","sims", model_name, sim_name))
