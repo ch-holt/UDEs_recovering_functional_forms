@@ -100,7 +100,7 @@ function run_model(sim_name, contact_function, beta_function, rho_true, location
     dI_hat = sigma .* E_hat .- (gamma + delta) .* I_hat
 
     # NN inputs for the contact network
-    nn_input_traj = permutedims(hcat(I_hat ./ population, dI_hat ./ dI_scale, c_hat_full))
+    nn_input_traj = permutedims(hcat(I_hat ./ population, dI_hat ./ dI_scale, c_hat_full/100))
     g_traj = vec(contact_network(nn_input_traj, p_trained.nn_params, st)[1])
 
     # Infectious trajectory fit
@@ -196,7 +196,7 @@ const r = noise == 0 ? Inf : 1 / noise^2
 
 
 model_name = "ude_behaviour_model1"
-sim_name = "UDE_behaviour_model1_contact=$(contact_function)_traindata=$(train_length)_noise=$(noise)_dI=$(dI_scaling)_c_loss_norm_reinit"
+sim_name = "UDE_behaviour_model1_contact=$(contact_function)_traindata=$(train_length)_noise=$(noise)_dI=$(dI_scaling)_c_loss_norm_reinit_c_norm_100"
 
 if !isdir(datadir("exp_pro","sims", model_name, sim_name))
     mkpath(datadir("exp_pro","sims", model_name, sim_name))
