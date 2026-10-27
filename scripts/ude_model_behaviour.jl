@@ -62,7 +62,14 @@ function run_model(sim_name, contact_function, beta_function, rho_true, location
 
     # Evaluate final long term results
     long_term_prob= remake(prob_ude, p = p_trained, tspan = (1.0, 3*365.0), u0 = u0)
-    long_term_pred = solve(long_term_prob, solver, saveat=1, dense = false)
+    long_term_sol = solve(long_term_prob, solver, saveat=1, dense = false, verbose = false)
+
+
+    # If the solve stops early, pad the missing days with NaN so the seed is still saved
+    solve_failed = !SciMLBase.successful_retcode(long_term_sol)
+    n_days_solved = length(long_term_sol.t)
+    long_term_pred = fill(NaN, length(u0), 3*365)
+    long_term_pred[:, 1:n_days_solved] = Array(long_term_sol)
 
     # Long-term predictions
     x_hat = long_term_pred[3, 1:length(data_I)]
@@ -99,7 +106,7 @@ function run_model(sim_name, contact_function, beta_function, rho_true, location
 	JLD2.save(datadir("exp_pro","sims", model_name, sim_name, loc_foldername, foldername, "results.jld2"),
 		"location", location, "population", population, "p", p_trained, "train_losses", train_losses_final, "val_losses", val_losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_hat,
 		"contact_prediction", c_hat, "NN_approx", g_traj, "days", days, "seed", seed, "noise", noise, "loss_traj_noisy", loss_traj_noisy, "loss_traj_true", loss_traj_true, "loss_contacts", loss_contacts, "loss_beta", loss_beta,
-        "phi_init", phi_init, "phi_hat", phi_hat, "rho_init", rho_init, "rho_hat", rho_hat, "rho_true", rho_true, "rho_rel_error", rho_rel_error,
+        "phi_init", phi_init, "phi_hat", phi_hat, "rho_init", rho_init, "rho_hat", rho_hat, "rho_true", rho_true, "rho_rel_error", rho_rel_error,"solve_failed", solve_failed, "n_days_solved", n_days_solved,
         "elapsed_seconds", elapsed)
 
 	println("Finished run: $(location) on thread $(Threads.threadid())")
@@ -171,7 +178,7 @@ const r = noise == 0 ? Inf : 1 / noise^2
 
 
 model_name = "ude_behaviour_model1"
-sim_name = "UDE_behaviour_model1_contact=$(contact_function)_traindata=$(train_length)_noise=$(noise)_dI=$(dI_scaling)"
+sim_name = "UDE_behaviour_model1_contact=$(contact_function)_traindata=$(train_length)_noise=$(noise)_dI=$(dI_scaling)_c_loss_norm"
 
 if !isdir(datadir("exp_pro","sims", model_name, sim_name))
     mkpath(datadir("exp_pro","sims", model_name, sim_name))
@@ -213,6 +220,7 @@ zeta = ZETA[location]
 beta0 = R0_reproduction * (gamma + delta)
 I0 = max(1.0, prevalence * population)
 S0 = population - E0 - I0 - R0_recovered - D0
+
 # Base contact rate for initial conditions - assume known
 c0 = C0[location]
 # True transmission probability per contact

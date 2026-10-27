@@ -344,7 +344,7 @@ for location in keys(POPULATION)
                                     zeta = zeta)
 
         # Generate data and save to JLD2 file
-        #generate_synthetic_data(fixed_p, varying_p, 365, location, beta_function, noise_levels)
+        generate_synthetic_data(fixed_p, varying_p, 365, location, beta_function, noise_levels)
 
     end
 end

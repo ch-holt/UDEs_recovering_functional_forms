@@ -158,7 +158,7 @@ MAKE PREDICTION USING UDE MODEL
 function make_predict_ude(prob, train_length, solver; states=3)
     function predict_ude(p_all, u0)
         new_prob = remake(prob, p = p_all, u0 = u0)
-        sol = solve(new_prob, solver, saveat=1.0, dense=false)
+        sol = solve(new_prob, solver, saveat=1.0, dense=false, verbose=false)
         if sol.retcode != ReturnCode.Success || length(sol.t) < train_length
             return nothing
         end
