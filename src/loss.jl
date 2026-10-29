@@ -40,8 +40,8 @@ end
 
 # Loss function for behavioural observations
 # Note: will need to change this when we introduce noisy data
-# Note: need to think about whether we normalise
-loss_contacts(pred_c, data, tpts) = loss_nmse(pred_c[tpts], data[tpts], norm=true)
+# norm=true divides by the range (max - min) of the contact data, norm=false uses the raw squared error
+loss_contacts(pred_c, data, tpts; norm=true) = loss_nmse(pred_c[tpts], data[tpts], norm=norm)
 
 function loss_ude(p_all, predict_ude, data, u0, tpts, noise)
     pred = predict_ude(p_all, u0)
@@ -49,10 +49,10 @@ function loss_ude(p_all, predict_ude, data, u0, tpts, noise)
     return loss_infections(p_all, pred, data, tpts, noise)
 end
 
-function loss_ude_behaviour(p_all, predict_ude, data_I, data_c, u0, tpts, noise)
+function loss_ude_behaviour(p_all, predict_ude, data_I, data_c, u0, tpts, noise; c_loss_norm=true)
     pred = predict_ude(p_all, u0)
     isnothing(pred) && (println("ODE solve failed"); return Inf)
-    return loss_infections(p_all, pred[3, :], data_I, tpts, noise) + loss_contacts(pred[6, :], data_c, tpts)
+    return loss_infections(p_all, pred[3, :], data_I, tpts, noise) + loss_contacts(pred[6, :], data_c, tpts; norm=c_loss_norm)
 end
 
 function regularisation(nn_params)

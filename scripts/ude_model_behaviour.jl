@@ -25,7 +25,7 @@ using UDE_FUNCTIONAL_FORMS
 MAIN FUNCTION TO TRAIN THE UDE AND SAVE THE RESULTS
 =========================================================# 
 
-function run_model(sim_name, contact_function, beta_function, rho_true, location, data_I, true_data_I, data_c, train_length, u0, seed, predict_ude, contact_network, prob_ude, noise, r, solver; maxiters_adam, maxiters_lbfgs, adam_learning_rate, number_of_nn_inputs=1, model_name, days, delta, population, dI_scale, c_scale)
+function run_model(sim_name, contact_function, beta_function, rho_true, location, data_I, true_data_I, data_c, train_length, u0, seed, predict_ude, contact_network, prob_ude, noise, r, solver; maxiters_adam, maxiters_lbfgs, adam_learning_rate, number_of_nn_inputs=1, model_name, days, delta, population, dI_scale, c_scale, c_loss_norm)
     println("Starting run: on thread $(Threads.threadid())")
     t_start = time()
     rng = Random.seed!(seed)
@@ -49,7 +49,7 @@ function run_model(sim_name, contact_function, beta_function, rho_true, location
 
     training_data_I = data_I[1:train_length]
     training_data_c = data_c[1:train_length]
-    loss_fn = (θ, tpts) -> loss_ude_behaviour(θ, predict_ude, training_data_I, training_data_c, u0, tpts, noise)
+    loss_fn = (θ, tpts) -> loss_ude_behaviour(θ, predict_ude, training_data_I, training_data_c, u0, tpts, noise; c_loss_norm=c_loss_norm)
 
     # Make sure to start with a stable parameterisation
     l_init = loss_fn(p_init, 1:train_length)
@@ -125,7 +125,7 @@ function run_model(sim_name, contact_function, beta_function, rho_true, location
 		"location", location, "population", population, "p", p_trained, "train_losses", train_losses_final, "val_losses", val_losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_hat,
 		"contact_prediction", c_hat, "NN_approx", g_traj, "days", days, "seed", seed, "noise", noise, "loss_traj_noisy", loss_traj_noisy, "loss_traj_true", loss_traj_true, "loss_contacts", loss_contacts, "loss_beta", loss_beta,
         "phi_init", phi_init, "phi_hat", phi_hat, "rho_init", rho_init, "rho_hat", rho_hat, "rho_true", rho_true, "rho_rel_error", rho_rel_error,"solve_failed", solve_failed, "n_days_solved", n_days_solved,
-        "n_reinit", n_reinit, "l_init", l_init, "dI_scale", dI_scale, "c_scale", c_scale, "elapsed_seconds", elapsed)
+        "n_reinit", n_reinit, "l_init", l_init, "dI_scale", dI_scale, "c_scale", c_scale, "c_loss_norm", c_loss_norm, "elapsed_seconds", elapsed)
 
 	println("Finished run: $(location) on thread $(Threads.threadid())")
 
@@ -155,9 +155,11 @@ const n_seeds = parse(Int, get(ARGS, 5, "100"))
 const dI_scaling = get(ARGS, 7, "none")
 # Scaling of the contact input to the NN - "none" (raw), "100" (divided by 100) or "sum" (divided by the sum of the training contacts)
 const c_scaling = get(ARGS, 8, "none")
+# Normalise the contact loss by the range (max - min) of the contact data - "true" (default) or "false" (raw squared error)
+const c_loss_norm = parse(Bool, get(ARGS, 9, "true"))
 
 # print settings
-println("Settings: contact=$(contact_function), noise=$(noise), train_length=$(train_length), dI_scaling=$(dI_scaling), c_scaling=$(c_scaling)")
+println("Settings: contact=$(contact_function), noise=$(noise), train_length=$(train_length), dI_scaling=$(dI_scaling), c_scaling=$(c_scaling), c_loss_norm=$(c_loss_norm)")
 
 # Define the timespan for the ODE solver
 tspan = [1, train_length]
@@ -198,7 +200,7 @@ const r = noise == 0 ? Inf : 1 / noise^2
 
 
 model_name = "ude_behaviour_model1"
-sim_name = "UDE_behaviour_model1_contact=$(contact_function)_traindata=$(train_length)_noise=$(noise)_dI=$(dI_scaling)_c=$(c_scaling)_c_loss_norm_reinit"
+sim_name = "UDE_behaviour_model1_contact=$(contact_function)_traindata=$(train_length)_noise=$(noise)_dI=$(dI_scaling)_c=$(c_scaling)_c_loss_$(c_loss_norm ? "norm" : "raw")_reinit"
 
 if !isdir(datadir("exp_pro","sims", model_name, sim_name))
     mkpath(datadir("exp_pro","sims", model_name, sim_name))
@@ -281,7 +283,7 @@ Threads.@threads for i = 1:n_seeds
         run_model(sim_name, contact_function, beta_function, rho_true, location, data_I, true_data_I, data_c,train_length, u0, i, predict_ude, contact_network, prob_ude, noise, r, solver;
             maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs,
             number_of_nn_inputs=number_of_nn_inputs, adam_learning_rate=adam_learning_rate,
-            model_name=model_name, days=days, delta=delta, population=population, dI_scale=dI_scale, c_scale=c_scale)
+            model_name=model_name, days=days, delta=delta, population=population, dI_scale=dI_scale, c_scale=c_scale, c_loss_norm=c_loss_norm)
     catch e
         println("Error occurred for seed $(i): $e")
     end
