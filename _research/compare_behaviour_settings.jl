@@ -190,8 +190,7 @@ const GRAPHS = [
                        ("Q3a_g_true_trajectory", "g(t) on the true trajectory"), ("Q4_beta", "β(t) = ρ̂·ĉ(t)"),
                        ("Q5_rho", "ρ̂ against ρ_true")]),
     (out_of_sample_plots, [("Q2b_c_vs_I", "ĉ against I/N"), ("Q3b_slice1", "ĝ/ΔI_ref against I/N"),
-                           ("Q3b_slice2_0.5peak", "ĝ at I/N = 0.5×peak"), ("Q3b_slice2_peak", "ĝ at I/N = peak"),
-                           ("Q3b_slice2_2peak", "ĝ at I/N = 2×peak")]),
+                           ("Q3b_slice2", "ĝ against ΔI/N at 0.5×, 1×, 2× peak I/N")]),
 ]
 
 # Give every panel in a row the same y range, so the settings can be compared by eye

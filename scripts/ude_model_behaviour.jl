@@ -153,7 +153,7 @@ const solver = AutoTsit5(Rosenbrock23())
 const n_seeds = parse(Int, get(ARGS, 5, "100"))
 # Scaling of the Delta I input to the NN - "none" (raw counts per day) or "N0" (divided by the initial population)
 const dI_scaling = get(ARGS, 7, "none")
-# Scaling of the contact input to the NN - "none" (raw), "100" (divided by 100) or "sum" (divided by the sum of the training contacts)
+# Scaling of the contact input to the NN - "none" (raw), "100" (divided by 100), "sum" (divided by the sum of the training contacts) or "c0" (divided by the initial contact rate)
 const c_scaling = get(ARGS, 8, "none")
 # Normalise the contact loss by the range (max - min) of the contact data - "true" (default) or "false" (raw squared error)
 const c_loss_norm = parse(Bool, get(ARGS, 9, "true"))
@@ -255,7 +255,7 @@ u0 = [S0, E0, I0, R0_recovered, D0, c0]
 dI_scale = dI_scaling == "N0" ? population : dI_scaling == "none" ? 1.0 : error("dI_scaling must be \"none\" or \"N0\"")
 # Divisor for the contact input to the NN (only uses the training period)
 c_scale = c_scaling == "none" ? 1.0 : c_scaling == "100" ? 100.0 : c_scaling == "sum" ? sum(data_c[1:train_length]) :
-          error("c_scaling must be \"none\", \"100\" or \"sum\"")
+          c_scaling == "c0" ? c0 : error("c_scaling must be \"none\", \"100\", \"sum\" or \"c0\"")
 
 # run the model on multiple threads
 Threads.@threads for i = 1:n_seeds
