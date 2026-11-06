@@ -128,6 +128,10 @@ const solver = AutoTsit5(Rosenbrock23())
 # Number of seeds per location (seeds 1:n_seeds) - default 100; fewer only for timing runs
 const n_seeds = parse(Int, get(ARGS, 5, "100"))
 
+# Optional suffix appended to sim_name - default "" (production folder). Used to keep extra-seed
+# runs (e.g. "_nseeds=1000") apart from the production results, which downstream scripts read in full
+const sim_suffix = get(ARGS, 6, "")
+
 # print settings
 println("Settings: beta=$(beta_function), noise=$(noise), train_length=$(train_length)")
 
@@ -167,7 +171,7 @@ maxiters_lbfgs = 2000
 const r = noise == 0 ? Inf : 1 / noise^2
 
 model_name = "ude_single"
-sim_name = "UDE_single_beta=$(beta_function)_traindata=$(train_length)_noise=$(noise)"
+sim_name = "UDE_single_beta=$(beta_function)_traindata=$(train_length)_noise=$(noise)$(sim_suffix)"
 
 if !isdir(datadir("exp_pro","sims", model_name, sim_name))
     mkpath(datadir("exp_pro","sims", model_name, sim_name))
