@@ -41,7 +41,7 @@ include("symbolic_regression.jl")
 include("plotting.jl")
 
 export make_seird_functional, run_seird_functional_form, make_seird_nn, make_predict_ude, make_seird_sr, make_seird_baseline
-export make_seird_nn_behaviour_model1
+export make_seird_nn_behaviour_model1, make_seird_nn_behaviour_model2
 export build_neural_network
 export loss_ude, loss_ude_behaviour, regularisation, loss_nmse, combined_loss_ude_adam, combined_loss_ude_lbfgs
 export beta_exp, beta_rational, beta_mixed, contacts_exp, contacts_rational, contacts_mixed

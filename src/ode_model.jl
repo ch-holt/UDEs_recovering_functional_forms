@@ -151,14 +151,48 @@ function make_seird_nn_behaviour_model1(contact_network, st, sigma, gamma, delta
 end
 
 #========================================================
+DEFINE BEHAVIOURAL UDE MODEL 2
+=========================================================# 
+function make_seird_nn_behaviour_model2(beta_network, st_beta, contact_network, st_contact, sigma, gamma, delta, population; dI_scale=1.0, c_scale=1.0)
+    
+
+    function seird_nn!(du, u, p, t)
+        S, E, I, R, D, c = u
+        N = S + E + I + R
+
+        if N <= 0
+            du .= 0.0
+            return
+        end
+
+        beta = beta_network([c/c_scale], p.beta_params, st_beta)[1][1]
+
+        dI = sigma * E - (gamma + delta) * I
+        # dI_scale = 1 (raw) or the initial population N(0); c_scale = 1 (raw), 100, the sum of the training contacts or c0
+        nn_input = [I / population, dI / dI_scale, c / c_scale]
+
+
+        du[1] = -beta * S * I / N
+        du[2] =  beta * S * I / N - sigma * E
+        du[3] = sigma * E - (gamma + delta) * I
+        du[4] = gamma * I
+        du[5] = delta * I
+        # New equation for contact dynamics
+        du[6] = c * contact_network(nn_input, p.contact_params, st_contact)[1][1]  
+
+    end
+    return seird_nn!
+end
+
+#========================================================
 MAKE PREDICTION USING UDE MODEL
 =========================================================# 
 
 # Function to make UDE predictions - default return infections only
-function make_predict_ude(prob, train_length, solver; states=3)
+function make_predict_ude(prob, train_length, solver; states=3, sensealg=nothing)
     function predict_ude(p_all, u0)
         new_prob = remake(prob, p = p_all, u0 = u0)
-        sol = solve(new_prob, solver, saveat=1.0, dense=false, verbose=false)
+        sol = solve(new_prob, solver, saveat=1.0, dense=false, verbose=false, sensealg=sensealg)
         if sol.retcode != ReturnCode.Success || length(sol.t) < train_length
             return nothing
         end

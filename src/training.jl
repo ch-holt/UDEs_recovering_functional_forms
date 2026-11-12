@@ -112,7 +112,8 @@ end
 FUNCTION TO TRAIN UDE MODEL ON SINGLE DATASET
 =========================================================#
 
-function train_ude_single_dataset(p, loss_fn, n_obs; maxiters_adam, maxiters_lbfgs, adam_learning_rate)
+# Pass the regularisation function in, so when we have two NNs we can regularise both weights
+function train_ude_single_dataset(p, loss_fn, n_obs; maxiters_adam, maxiters_lbfgs, adam_learning_rate, reg_fn = theta -> regularisation(theta.nn_params))
 
     # Set up optimisation (first Adam then LBFGS)
     optimised_state = Optimisers.setup(Optimisers.Adam(adam_learning_rate), p)
@@ -132,7 +133,7 @@ function train_ude_single_dataset(p, loss_fn, n_obs; maxiters_adam, maxiters_lbf
     for iter in 1:maxiters_adam
 
         # Compute the loss, predicted infections and gradient function
-        train_l, back_all = pullback(theta -> loss_fn(theta, train_tpts) + regularisation(theta.nn_params), p)
+        train_l, back_all = pullback(theta -> loss_fn(theta, train_tpts) + reg_fn(theta), p)
         iter % 50 == 0 && println("Iteration $iter, Loss: $train_l")
         # Evaluate the gradient of the loss w.r.t p
         grad = back_all((one(train_l)))[1]
@@ -152,7 +153,7 @@ function train_ude_single_dataset(p, loss_fn, n_obs; maxiters_adam, maxiters_lbf
         push!(train_losses, train_l)
 
         # Compute validation loss
-        val_l = loss_fn(p, val_tpts) + regularisation(p.nn_params)
+        val_l = loss_fn(p, val_tpts) + reg_fn(p)
         push!(val_losses, val_l)
 
         # Store best iteration (minimising validation loss)
@@ -169,7 +170,7 @@ function train_ude_single_dataset(p, loss_fn, n_obs; maxiters_adam, maxiters_lbf
     # Then do LBFGS optimisation
     adtype = Optimization.AutoZygote()
     optfunc   = Optimization.OptimizationFunction(
-                 (theta, _) -> loss_fn(theta, train_tpts) + regularisation(theta.nn_params),
+                 (theta, _) -> loss_fn(theta, train_tpts) + reg_fn(theta),
                  adtype)
     optprob = Optimization.OptimizationProblem(optfunc, best_p)
 
@@ -183,7 +184,7 @@ function train_ude_single_dataset(p, loss_fn, n_obs; maxiters_adam, maxiters_lbf
                 push!(train_losses, train_l)
 
                 # Compute validation loss
-                val_l = loss_fn(state.u, val_tpts) + regularisation(state.u.nn_params)
+                val_l = loss_fn(state.u, val_tpts) + reg_fn(state.u)
                 push!(val_losses, val_l)
 
                 if val_l < best_loss

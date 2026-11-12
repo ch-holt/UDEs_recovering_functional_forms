@@ -1,0 +1,305 @@
+#========================================================
+SCRIPT TO TRAIN THE UDE MODEL WITH BEHAVIOURAL DATA AND 2 NNS
+=========================================================#  
+
+using DrWatson
+@quickactivate("UDE_FUNCTIONAL_FORMS")
+
+using Lux
+using ComponentArrays
+using DataFrames
+using Zygote
+using Optimisers
+using DifferentialEquations
+using JLD2
+using Optimization
+using OptimizationOptimJL
+using SciMLSensitivity
+using Random
+using Distributions
+
+# Call module
+using UDE_FUNCTIONAL_FORMS
+
+#========================================================
+MAIN FUNCTION TO TRAIN THE UDE AND SAVE THE RESULTS
+=========================================================# 
+
+function run_model(sim_name, beta_function, rho_true, c0, location, data_I, true_data_I, data_c, train_length, u0, seed, predict_ude, beta_network, contact_network, prob_ude, noise, r, solver; maxiters_adam, maxiters_lbfgs, adam_learning_rate, number_of_nn_inputs=1, model_name, days, delta, population, dI_scale, c_scale, c_loss_norm)
+    println("Starting run: on thread $(Threads.threadid())")
+    t_start = time()
+    rng = Random.seed!(seed)
+
+    # Initialise parameters
+    p_beta, st_beta = Lux.setup(rng, beta_network)
+    p_contact, st_contact = Lux.setup(rng, contact_network)
+
+    # Random starting noise level for each seed (multistart), log-uniform on [1e-3, 1]
+    phi_init = exp(rand(rng, Uniform(log(1e-3), log(1.0))))
+
+    # Combine all parameters into a single object for optimisation
+
+    p_init = noise == 0 ? ComponentArray(beta_params = Float64.(ComponentArray(p_beta)), contact_params = Float64.(ComponentArray(p_contact))) :
+                          ComponentArray(beta_params = Float64.(ComponentArray(p_beta)), contact_params = Float64.(ComponentArray(p_contact)), log_phi = log(phi_init))
+
+    training_data_I = data_I[1:train_length]
+    training_data_c = data_c[1:train_length]
+    loss_fn = (θ, tpts) -> loss_ude_behaviour(θ, predict_ude, training_data_I, training_data_c, u0, tpts, noise; c_loss_norm=c_loss_norm)
+
+    # Make sure to start with a stable parameterisation
+    l_init = loss_fn(p_init, 1:train_length)
+    # cap the number of times we can reinitialise
+    n_reinit = 0
+    while l_init > 1e4 && n_reinit < 100
+        n_reinit += 1
+        println("Unstable initial parameterization. Restarting..., $l_init")
+        # Re-initialise parameters
+        p_beta, st_beta = Lux.setup(rng, beta_network)
+        p_contact, st_contact = Lux.setup(rng, contact_network)
+
+        # Random starting noise level for each seed (multistart), log-uniform on [1e-3, 1]
+        phi_init = exp(rand(rng, Uniform(log(1e-3), log(1.0))))
+
+        # Combine all parameters into a single object for optimisation
+        p_init = noise == 0 ? ComponentArray(beta_params = Float64.(ComponentArray(p_beta)), contact_params = Float64.(ComponentArray(p_contact))) :
+                              ComponentArray(beta_params = Float64.(ComponentArray(p_beta)), contact_params = Float64.(ComponentArray(p_contact)), log_phi = log(phi_init))
+        l_init = loss_fn(p_init, 1:train_length)
+    end
+    println(n_reinit)
+    p_trained, train_losses_final, val_losses_final = train_ude_single_dataset(p_init, loss_fn, length(training_data_I); maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, adam_learning_rate=adam_learning_rate, reg_fn = theta -> regularisation(theta.beta_params)+regularisation(theta.contact_params))
+
+    # Recover the jointly estimated noise level (only estimated when noise>0)
+    phi_hat = noise == 0 ? missing : exp(p_trained.log_phi)
+
+    loc_foldername = "synthetic_$(location)"
+
+    foldername = "simulation_seed=$(seed)"
+
+    # Evaluate final long term results
+    long_term_prob= remake(prob_ude, p = p_trained, tspan = (1.0, 3*365.0), u0 = u0)
+    long_term_sol = solve(long_term_prob, solver, saveat=1, dense = false, verbose = false)
+
+
+    # If the solve stops early, pad the missing days with NaN so the seed is still saved
+    solve_failed = !SciMLBase.successful_retcode(long_term_sol)
+    n_days_solved = length(long_term_sol.t)
+    long_term_pred = fill(NaN, length(u0), 3*365)
+    long_term_pred[:, 1:n_days_solved] = Array(long_term_sol)
+
+    # Long-term predictions
+    x_hat = long_term_pred[3, 1:length(data_I)]
+    c_hat = long_term_pred[6, 1:length(data_I)]
+
+    # Derive the NN inputs
+    E_hat  = long_term_pred[2, :]
+    I_hat  = long_term_pred[3, :]
+    c_hat_full  = long_term_pred[6, :]
+    dI_hat = sigma .* E_hat .- (gamma + delta) .* I_hat
+
+    # NN inputs for the contact network
+    nn_input_traj = permutedims(hcat(I_hat ./ population, dI_hat ./ dI_scale, c_hat_full ./ c_scale))
+    g_traj = vec(contact_network(nn_input_traj, p_trained.contact_params, st_contact)[1])
+
+    # Infectious trajectory fit
+    loss_traj_noisy = loss_nmse(x_hat, data_I)
+    loss_traj_true  = loss_nmse(x_hat, true_data_I)
+
+    # Contact rate fit
+    loss_contacts = loss_nmse(c_hat, data_c)
+
+    # Transmission rate fit: beta(t)
+    beta_hat = vec(beta_network(permutedims(c_hat ./ c_scale), p_trained.beta_params, st_beta)[1])
+
+    # Evaluate the learned beta(c) on a grid of contact values; truth is the straight line rho_true * c
+    c_grid = collect(range(0.0, 1.5 * c0, length = 200))
+    beta_grid = vec(beta_network(permutedims(c_grid ./ c_scale), p_trained.beta_params, st_beta)[1])
+    beta_grid_true = rho_true .* c_grid
+    # Range of contacts seen in training (in-sample region)
+    c_train_min, c_train_max = extrema(data_c[1:train_length])
+
+    true_beta = beta_function(location, true_data_I)
+    loss_beta = loss_nmse(beta_hat, true_beta)
+
+
+    elapsed = time() - t_start
+
+    mkpath(datadir("exp_pro","sims", model_name, sim_name, loc_foldername, foldername))
+	JLD2.save(datadir("exp_pro","sims", model_name, sim_name, loc_foldername, foldername, "results.jld2"),
+		"location", location, "population", population, "p", p_trained, "train_losses", train_losses_final, "val_losses", val_losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_hat,
+		"contact_prediction", c_hat, "NN_approx", g_traj, "days", days, "seed", seed, "noise", noise, "loss_traj_noisy", loss_traj_noisy, "loss_traj_true", loss_traj_true, "loss_contacts", loss_contacts, "loss_beta", loss_beta,
+        "phi_init", phi_init, "phi_hat", phi_hat, "solve_failed", solve_failed, "n_days_solved", n_days_solved,
+        "n_reinit", n_reinit, "l_init", l_init, "dI_scale", dI_scale, "c_scale", c_scale, "c_loss_norm", c_loss_norm, "elapsed_seconds", elapsed,
+        "rho_true", rho_true, "c0", c0, "c_grid", c_grid, "beta_grid", beta_grid, "beta_grid_true", beta_grid_true,
+        "c_train_min", c_train_min, "c_train_max", c_train_max)
+
+	println("Finished run: $(location) on thread $(Threads.threadid())")
+
+	return nothing
+end
+
+
+#========================================================
+DEFINE HYPERPARAMETERS
+=========================================================#
+
+
+# beta functional form - default exp
+const CONTACT_FUNCTIONS = Dict("contacts_exp" => contacts_exp, "contacts_rational" => contacts_rational, "contacts_mixed" => contacts_mixed)
+const contact_function = get(ARGS, 6, "contacts_exp")
+# get noise - default 0
+const noise = parse(Float64, get(ARGS, 2, "0.0"))
+# Number of data points used for training - default 365
+const train_length = parse(Int, get(ARGS, 3, "365"))
+
+# ODE solver for UDE training/prediction - AutoTsit5(Rosenbrock23()) with default tolerances
+const solver = AutoTsit5(Rosenbrock23())
+
+# Number of seeds per location (seeds 1:n_seeds) - default 100; fewer only for timing runs
+const n_seeds = parse(Int, get(ARGS, 5, "100"))
+# Scaling of the Delta I input to the NN - "none" (raw counts per day) or "N0" (divided by the initial population)
+const dI_scaling = get(ARGS, 7, "N0")
+# Scaling of the contact input to the NN - "none" (raw), "100" (divided by 100), "sum" (divided by the sum of the training contacts) or "c0" (divided by the initial contact rate)
+const c_scaling = get(ARGS, 8, "c0")
+# Normalise the contact loss by the range (max - min) of the contact data - "true" (default) or "false" (raw squared error)
+const c_loss_norm = parse(Bool, get(ARGS, 9, "true"))
+
+# print settings
+println("Settings: contact=$(contact_function), noise=$(noise), train_length=$(train_length), dI_scaling=$(dI_scaling), c_scaling=$(c_scaling), c_loss_norm=$(c_loss_norm)")
+
+# Define the timespan for the ODE solver
+tspan = [1, train_length]
+
+#========================================================
+DEFINE INITIAL STATE
+=========================================================#
+
+# Latent period of 3 days represented by incubation rate sigma
+const sigma = 1/3 
+# Infectious period of 10 days represented by recovery rate gamma
+const gamma = 1/10
+
+# Define initial state same as the generated data
+# Retrieve fixed parameters
+const E0 = 1.0
+const R0_recovered = 0.0
+const D0 = 0.0
+
+#========================================================
+DEFINE MODEL SETTINGS
+=========================================================#
+
+hidden_dims = 5
+beta_input_size = 1
+contact_input_size = 3
+output_size = 1
+activation_function = gelu
+# Final activation function. The NN is representing change in contact rate which can be positive or negative -> use the identity function
+contact_final_activation_function = identity
+# Final activation for transmission rate is softplus to enforce positivity
+beta_final_activation_function = softplus
+number_of_nn_inputs = 1
+adam_learning_rate = 1e-3
+
+maxiters_adam = 2500
+maxiters_lbfgs = 2000
+
+const r = noise == 0 ? Inf : 1 / noise^2
+
+
+
+model_name = "ude_behaviour_model2"
+sim_name = "UDE_behaviour_model2_contact=$(contact_function)_traindata=$(train_length)_noise=$(noise)_dI=$(dI_scaling)_c=$(c_scaling)_c_loss_$(c_loss_norm ? "norm" : "raw")_reinit"
+
+if !isdir(datadir("exp_pro","sims", model_name, sim_name))
+    mkpath(datadir("exp_pro","sims", model_name, sim_name))
+end
+
+# do 100 initialisations for each location
+# create an array job - each job is given a number so all jobs can run simultaneously
+const LOCATIONS = sort(collect(keys(POPULATION)))
+location = LOCATIONS[parse(Int, ENV["SLURM_ARRAY_TASK_ID"])]
+println("Running simulation for location: $(location)")
+
+#========================================================
+LOAD DATA
+=========================================================#
+
+# Convert contact function to beta function
+const BETA_FUNCTIONS = Dict("beta_exp" => beta_exp, "beta_rational" => beta_rational, "beta_mixed" => beta_mixed)
+beta_name = replace(contact_function, "contacts" => "beta")
+beta_function = BETA_FUNCTIONS[beta_name]
+
+dataset_I = JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_HQ_$(beta_name)", "synthetic_$(location)", "noise=$(noise).jld2"))
+dataset_c = JLD2.load(datadir("exp_pro", "synthetic_data", "synthetic_contact_trajectories_HQ","ground_truth_$(contact_function)", "location_$(location)","synthetic_$(contact_function)_$(location)_over_time.jld2"))
+true_dataset_I = noise == 0 ? dataset_I : JLD2.load(datadir("exp_pro", "synthetic_data","synthetic_trajectories_HQ_$(beta_name)", "synthetic_$(location)", "noise=0.0.jld2"))
+# For when noisy behaviour data is introduced: true_dataset_c = noise == 0 ? dataset : JLD2.load(datadir())
+
+data_I = dataset_I["infectious"]
+data_c = dataset_c["contact"]
+true_data_I = true_dataset_I["infectious"]
+# For when noisy behaviour data is introduced: true_data_c = true_dataset_c["contacts"]
+days = dataset_I["days"]
+
+population = POPULATION[location]
+prevalence = PREVALENCE[location]
+delta = DELTA[location]
+R0_reproduction = R0_REPRODUCTION[location]
+zeta = ZETA[location]
+
+# Derive other parameters
+beta0 = R0_reproduction * (gamma + delta)
+I0 = max(1.0, prevalence * population)
+S0 = population - E0 - I0 - R0_recovered - D0
+
+# Base contact rate for initial conditions - assume known
+c0 = C0[location]
+# True transmission probability per contact (for comparison  to gorund truth)
+rho_true = beta0 / c0
+
+
+# Define initial state
+u0 = [S0, E0, I0, R0_recovered, D0, c0]
+
+# Divisor for the Delta I input to the NN
+dI_scale = dI_scaling == "N0" ? population : dI_scaling == "none" ? 1.0 : error("dI_scaling must be \"none\" or \"N0\"")
+# Divisor for the contact input to the NN (only uses the training period)
+c_scale = c_scaling == "none" ? 1.0 : c_scaling == "100" ? 100.0 : c_scaling == "sum" ? sum(data_c[1:train_length]) :
+          c_scaling == "c0" ? c0 : error("c_scaling must be \"none\", \"100\", \"sum\" or \"c0\"")
+
+# run the model on multiple threads
+Threads.@threads for i = 1:n_seeds
+    # Resume support: skip a seed whose results already exist, so a rerun (e.g. after
+    # a timeout or crash) only computes the seeds still missing instead of starting
+    # over from seed 1.
+    results_path = datadir("exp_pro", "sims", model_name, sim_name, "synthetic_$(location)", "simulation_seed=$(i)", "results.jld2")
+    if isfile(results_path)
+        println("Seed $(i) already exists for $(location), skipping.")
+        continue
+    end
+    # Catch any errors during the run so that the following seeds still run
+    try
+        local rng = Random.seed!(i)
+        println("Running simulation for seed $(i) on thread $(Threads.threadid())")
+        # Build neural network for beta swith one input - contacts
+        local beta_network, p_nn_temp_beta, st_beta = build_neural_network(rng, hidden_dims, beta_input_size, output_size,
+                                    activation_function, beta_final_activation_function)
+        # Build neural network for contactswith three inputs - prevalence, incidence and contacts
+        local contact_network, p_nn_temp_contact, st_contact = build_neural_network(rng, hidden_dims, contact_input_size, output_size,
+                                    activation_function, contact_final_activation_function)
+
+        local seird_nn! = make_seird_nn_behaviour_model2(beta_network, st_beta, contact_network, st_contact, sigma, gamma, delta, population; dI_scale=dI_scale, c_scale=c_scale)
+        local prob_ude = ODEProblem(seird_nn!, u0, tspan, ComponentArray(beta_params = p_nn_temp_beta, contact_params = p_nn_temp_contact))
+        # make prediction but return all states
+        local predict_ude = make_predict_ude(prob_ude, train_length, solver; states=:, sensealg=ForwardDiffSensitivity())
+
+        run_model(sim_name, beta_function, rho_true, c0, location, data_I, true_data_I, data_c,train_length, u0, i, predict_ude, beta_network, contact_network, prob_ude, noise, r, solver;
+            maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs,
+            number_of_nn_inputs=number_of_nn_inputs, adam_learning_rate=adam_learning_rate,
+            model_name=model_name, days=days, delta=delta, population=population, dI_scale=dI_scale, c_scale=c_scale, c_loss_norm=c_loss_norm)
+    catch e
+        println("Error occurred for seed $(i): $e")
+    end
+end
+
+
+
