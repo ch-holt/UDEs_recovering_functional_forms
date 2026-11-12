@@ -38,9 +38,9 @@ function run_model(sim_name, contact_function, beta_function, rho_true, location
     # Random starting noise level for each seed (multistart), log-uniform on [1e-3, 1]
     phi_init = exp(rand(rng, Uniform(log(1e-3), log(1.0))))
 
-    # Random starting rho for each seed, 
-    # Rho is a probability so it's uniform on [0, 1], stored on logit scale
-    rho_init = rand(rng, Uniform(0.0, 1.0))
+    # Random starting rho for each seed,
+    # Rho is a probability so it's uniform on [0, rho_max] (rho_max = 1 by default), stored on logit scale
+    rho_init = rand(rng, Uniform(0.0, rho_max))
 
     # Combine all parameters into a single object for optimisation
     # We use the logit function to put rho on the real line for optimisation
@@ -62,7 +62,7 @@ function run_model(sim_name, contact_function, beta_function, rho_true, location
         p = ComponentArray(p)
         p = Float64.(p)
         phi_init = exp(rand(rng, Uniform(log(1e-3), log(1.0))))
-        rho_init = rand(rng, Uniform(0.0, 1.0))
+        rho_init = rand(rng, Uniform(0.0, rho_max))
         p_init = noise == 0 ? ComponentArray(nn_params = p, logit_rho = log(rho_init / (1 - rho_init))) :
                             ComponentArray(nn_params = p, log_phi = log(phi_init), logit_rho = log(rho_init / (1 - rho_init)))
         l_init = loss_fn(p_init, 1:train_length)
@@ -125,7 +125,7 @@ function run_model(sim_name, contact_function, beta_function, rho_true, location
 		"location", location, "population", population, "p", p_trained, "train_losses", train_losses_final, "val_losses", val_losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_hat,
 		"contact_prediction", c_hat, "NN_approx", g_traj, "days", days, "seed", seed, "noise", noise, "loss_traj_noisy", loss_traj_noisy, "loss_traj_true", loss_traj_true, "loss_contacts", loss_contacts, "loss_beta", loss_beta,
         "phi_init", phi_init, "phi_hat", phi_hat, "rho_init", rho_init, "rho_hat", rho_hat, "rho_true", rho_true, "rho_rel_error", rho_rel_error,"solve_failed", solve_failed, "n_days_solved", n_days_solved,
-        "n_reinit", n_reinit, "l_init", l_init, "dI_scale", dI_scale, "c_scale", c_scale, "c_loss_norm", c_loss_norm, "elapsed_seconds", elapsed)
+        "n_reinit", n_reinit, "l_init", l_init, "dI_scale", dI_scale, "c_scale", c_scale, "c_loss_norm", c_loss_norm, "rho_max", rho_max, "elapsed_seconds", elapsed)
 
 	println("Finished run: $(location) on thread $(Threads.threadid())")
 
@@ -157,9 +157,12 @@ const dI_scaling = get(ARGS, 7, "none")
 const c_scaling = get(ARGS, 8, "none")
 # Normalise the contact loss by the range (max - min) of the contact data - "true" (default) or "false" (raw squared error)
 const c_loss_norm = parse(Bool, get(ARGS, 9, "true"))
+# Upper bound of the uniform prior for the initial rho - default 1.0 (rho_init ~ Uniform(0, rho_max))
+const rho_max = parse(Float64, get(ARGS, 10, "1.0"))
+(0 < rho_max <= 1) || error("rho_max must be in (0, 1]")
 
 # print settings
-println("Settings: contact=$(contact_function), noise=$(noise), train_length=$(train_length), dI_scaling=$(dI_scaling), c_scaling=$(c_scaling), c_loss_norm=$(c_loss_norm)")
+println("Settings: contact=$(contact_function), noise=$(noise), train_length=$(train_length), dI_scaling=$(dI_scaling), c_scaling=$(c_scaling), c_loss_norm=$(c_loss_norm), rho_max=$(rho_max)")
 
 # Define the timespan for the ODE solver
 tspan = [1, train_length]
@@ -200,7 +203,7 @@ const r = noise == 0 ? Inf : 1 / noise^2
 
 
 model_name = "ude_behaviour_model1"
-sim_name = "UDE_behaviour_model1_contact=$(contact_function)_traindata=$(train_length)_noise=$(noise)_dI=$(dI_scaling)_c=$(c_scaling)_c_loss_$(c_loss_norm ? "norm" : "raw")_reinit"
+sim_name = "UDE_behaviour_model1_contact=$(contact_function)_traindata=$(train_length)_noise=$(noise)_dI=$(dI_scaling)_c=$(c_scaling)_c_loss_$(c_loss_norm ? "norm" : "raw")_reinit$(rho_max == 1.0 ? "" : "_rhomax=$(rho_max)")"
 
 if !isdir(datadir("exp_pro","sims", model_name, sim_name))
     mkpath(datadir("exp_pro","sims", model_name, sim_name))
