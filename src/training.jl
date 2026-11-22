@@ -113,7 +113,7 @@ FUNCTION TO TRAIN UDE MODEL ON SINGLE DATASET
 =========================================================#
 
 # Pass the regularisation function in, so when we have two NNs we can regularise both weights
-function train_ude_single_dataset(p, loss_fn, n_obs; maxiters_adam, maxiters_lbfgs, adam_learning_rate, reg_fn = theta -> regularisation(theta.nn_params))
+function train_ude_single_dataset(p, loss_fn, n_obs; maxiters_adam, maxiters_lbfgs, adam_learning_rate, reg_fn = theta -> regularisation(theta.nn_params), diag_fn=nothing)
 
     # Set up optimisation (first Adam then LBFGS)
     optimised_state = Optimisers.setup(Optimisers.Adam(adam_learning_rate), p)
@@ -125,6 +125,7 @@ function train_ude_single_dataset(p, loss_fn, n_obs; maxiters_adam, maxiters_lbf
 
     # Create 1D vector to track losses during training
     train_losses = Float64[]
+    diags=[]
     val_losses = Float64[]
 
     best_loss = Inf
@@ -155,7 +156,8 @@ function train_ude_single_dataset(p, loss_fn, n_obs; maxiters_adam, maxiters_lbf
         # Compute validation loss
         val_l = loss_fn(p, val_tpts) + reg_fn(p)
         push!(val_losses, val_l)
-
+        # store diagnostics
+        diag_fn === nothing || push!(diags, diag_fn(p))
         # Store best iteration (minimising validation loss)
         if val_l < best_loss
             best_loss = val_l
@@ -175,6 +177,7 @@ function train_ude_single_dataset(p, loss_fn, n_obs; maxiters_adam, maxiters_lbf
     optprob = Optimization.OptimizationProblem(optfunc, best_p)
 
     iter_lbfgs = Ref(0)
+    res = nothing
     try
         res = Optimization.solve(
             optprob,
@@ -186,7 +189,8 @@ function train_ude_single_dataset(p, loss_fn, n_obs; maxiters_adam, maxiters_lbf
                 # Compute validation loss
                 val_l = loss_fn(state.u, val_tpts) + reg_fn(state.u)
                 push!(val_losses, val_l)
-
+                # store diagnostics
+                diag_fn === nothing || push!(diags, diag_fn(state.u))
                 if val_l < best_loss
                     best_loss = val_l
                     best_p = state.u
@@ -200,7 +204,20 @@ function train_ude_single_dataset(p, loss_fn, n_obs; maxiters_adam, maxiters_lbf
     catch e
         println("LBFGS failed ($e), returning best Adam parameters.")
     end
+    # Record why LBFGS stopped and some diagnostics
+    lbfgs_info = if res === nothing
+        (termination = "exception",)
+    else
+        o = res.original
+        (retcode     = string(res.retcode),
+         termination = string(Optim.termination_code(o)),
+         stopped_by  = o.stopped_by,           # true/false per stopping reason, incl. ls_failed, g_converged, f_increased
+         iterations  = Optim.iterations(o),
+         g_residual  = Optim.g_residual(o),    # gradient size at the end
+         f_calls     = Optim.f_calls(o),
+         g_calls     = Optim.g_calls(o))
+    end
+    println("LBFGS stopped: $(lbfgs_info.termination) after $(iter_lbfgs[]) callback iterations")
 
-
-    return best_p, train_losses, val_losses
+    return best_p, train_losses, val_losses, diags, lbfgs_info 
 end

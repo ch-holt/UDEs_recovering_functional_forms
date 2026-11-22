@@ -189,10 +189,10 @@ MAKE PREDICTION USING UDE MODEL
 =========================================================# 
 
 # Function to make UDE predictions - default return infections only
-function make_predict_ude(prob, train_length, solver; states=3, sensealg=nothing)
+function make_predict_ude(prob, train_length, solver; states=3, sensealg=nothing, verbose=false)
     function predict_ude(p_all, u0)
         new_prob = remake(prob, p = p_all, u0 = u0)
-        sol = solve(new_prob, solver, saveat=1.0, dense=false, verbose=false, sensealg=sensealg)
+        sol = solve(new_prob, solver, saveat=1.0, dense=false, verbose=verbose, sensealg=sensealg)
         if sol.retcode != ReturnCode.Success || length(sol.t) < train_length
             return nothing
         end
@@ -200,6 +200,29 @@ function make_predict_ude(prob, train_length, solver; states=3, sensealg=nothing
         return Array(sol)[states, 1:train_length]
     end
     return predict_ude
+end
+
+#========================================================
+SOLVER DIAGNOSTICS
+=========================================================# 
+
+# Do a forward-only solve at the parameters
+function solver_diagnostics(prob, p, u0, solver)
+    sol = solve(remake(prob, p = p, u0 = u0), solver; dense = false, verbose = true)
+    dts = diff(sol.t)
+    U = Array(sol)
+    return (retcode       = string(sol.retcode),
+            nf            = sol.stats.nf,
+            naccept       = sol.stats.naccept,
+            nreject       = sol.stats.nreject,
+            njacs         = sol.stats.njacs,
+            maxeig        = sol.stats.maxeig,
+            min_dt        = length(dts) < 2 ? NaN : minimum(dts[2:end]),
+            frac_stiff    = sol.alg_choice === nothing ? NaN : count(==(2), sol.alg_choice) / length(sol.alg_choice),
+            has_nonfinite = !all(isfinite, Array(sol)),
+            t_end = sol.t[end],
+            u_min = vec(minimum(U, dims=2)),
+            u_max = vec(maximum(U, dims=2)))
 end
 
 #========================================================

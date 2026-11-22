@@ -47,7 +47,22 @@ function run_model(sim_name, beta_function, location, data, true_data, train_len
     training_data = data[1:train_length]
 
     loss_fn = (θ, tpts) -> loss_ude(θ, predict_ude, training_data, u0, tpts, noise)
-    p_trained, train_losses_final, val_losses_final = train_ude_single_dataset(p_init, loss_fn, length(training_data); maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, adam_learning_rate=adam_learning_rate)
+
+    # Run and record the diagnostics
+    # Also record highest and lowest beta values
+    I_train = reshape(collect(range(0, maximum(training_data) / population; length = 100)), 1, :)
+    diag_fn = !solver_diag ? nothing : θ -> try
+            d = solver_diagnostics(prob_ude, θ, u0, solver)
+            b = beta_network(I_train, θ.nn_params, st)[1]
+            merge(d, (beta_min = minimum(b), beta_max = maximum(b)))
+        catch e
+            # Diagnostic doesn't stop training
+            (error = sprint(showerror, e),)   
+        end
+    
+    p_trained, train_losses_final, val_losses_final, solver_diags, lbfgs_info = train_ude_single_dataset(p_init, loss_fn, 
+    length(training_data); maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, adam_learning_rate=adam_learning_rate, 
+    diag_fn=diag_fn)
 
     # Recover the jointly estimated noise level (only estimated when noise>0)
     phi_hat = noise == 0 ? missing : exp(p_trained.log_phi)
@@ -102,7 +117,7 @@ function run_model(sim_name, beta_function, location, data, true_data, train_len
 		"days", days, "seed", seed, "noise", noise, "loss_traj_noisy", loss_traj_noisy, "loss_traj_true", loss_traj_true, "loss_beta", loss_beta, "loss_I_grid", loss_I_grid,
         "loss_I_train", loss_I_train, "y_hat", y_hat, "y_hat_train", y_hat_train,
         "phi_init", phi_init, "phi_hat", phi_hat,
-        "elapsed_seconds", elapsed)
+        "elapsed_seconds", elapsed, "solver_diags", solver_diags, "lbfgs_info", lbfgs_info)
 
 	println("Finished run: $(location) on thread $(Threads.threadid())")
 
@@ -128,9 +143,12 @@ const solver = AutoTsit5(Rosenbrock23())
 # Number of seeds per location (seeds 1:n_seeds) - default 100; fewer only for timing runs
 const n_seeds = parse(Int, get(ARGS, 5, "100"))
 
-# Optional suffix appended to sim_name - default "" (production folder). Used to keep extra-seed
-# runs (e.g. "_nseeds=1000") apart from the production results, which downstream scripts read in full
+# Optional suffix appended to sim_name - default ""
 const sim_suffix = get(ARGS, 6, "")
+# Optional setting to save solver diagnostics
+const solver_diag = parse(Bool, get(ARGS, 7, "false"))
+# Optional only run certain seeds (for testing) - default 1:n_seeds
+const seeds = length(ARGS) >= 8 ? parse.(Int, split(ARGS[8], ",")) : (1:n_seeds)
 
 # print settings
 println("Settings: beta=$(beta_function), noise=$(noise), train_length=$(train_length)")
@@ -209,7 +227,7 @@ S0 = population - E0 - I0 - R0_recovered - D0
 u0 = [S0, E0, I0, R0_recovered, D0]
 
 # run the model on multiple threads
-Threads.@threads for i = 1:n_seeds
+Threads.@threads for i in seeds
     # Resume support: skip a seed whose results already exist, so a rerun (e.g. after
     # a timeout or crash) only computes the seeds still missing instead of starting
     # over from seed 1.

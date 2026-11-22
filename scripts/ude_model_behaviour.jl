@@ -1,5 +1,5 @@
 #========================================================
-SCRIPT TO TRAIN THE UDE MODEL WOITH BEHAVIOURAL DATA
+SCRIPT TO TRAIN THE UDE MODEL WITH BEHAVIOURAL DATA
 =========================================================#  
 
 using DrWatson
@@ -67,9 +67,15 @@ function run_model(sim_name, contact_function, beta_function, rho_true, location
                             ComponentArray(nn_params = p, log_phi = log(phi_init), logit_rho = log(rho_init / (1 - rho_init)))
         l_init = loss_fn(p_init, 1:train_length)
     end
-
-    p_trained, train_losses_final, val_losses_final = train_ude_single_dataset(p_init, loss_fn, length(training_data_I); maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, adam_learning_rate=adam_learning_rate)
-
+    diag_fn = !solver_diag ? nothing : θ -> try
+        d = solver_diagnostics(prob_ude, θ, u0, solver)
+        merge(d, (rho = 1 / (1 + exp(-θ.logit_rho)),))
+    catch e
+        (error = sprint(showerror, e),)
+    end
+    p_trained, train_losses_final, val_losses_final, solver_diags, lbfgs_info = train_ude_single_dataset(
+        p_init, loss_fn, length(training_data_I); maxiters_adam=maxiters_adam, maxiters_lbfgs=maxiters_lbfgs, 
+        adam_learning_rate=adam_learning_rate, diag_fn=diag_fn)
     # Recover the jointly estimated noise level (only estimated when noise>0)
     phi_hat = noise == 0 ? missing : exp(p_trained.log_phi)
     rho_hat = 1 / (1 + exp(-p_trained.logit_rho))
@@ -125,7 +131,8 @@ function run_model(sim_name, contact_function, beta_function, rho_true, location
 		"location", location, "population", population, "p", p_trained, "train_losses", train_losses_final, "val_losses", val_losses_final, "prediction", Array(long_term_pred), "beta_prediction", beta_hat,
 		"contact_prediction", c_hat, "NN_approx", g_traj, "days", days, "seed", seed, "noise", noise, "loss_traj_noisy", loss_traj_noisy, "loss_traj_true", loss_traj_true, "loss_contacts", loss_contacts, "loss_beta", loss_beta,
         "phi_init", phi_init, "phi_hat", phi_hat, "rho_init", rho_init, "rho_hat", rho_hat, "rho_true", rho_true, "rho_rel_error", rho_rel_error,"solve_failed", solve_failed, "n_days_solved", n_days_solved,
-        "n_reinit", n_reinit, "l_init", l_init, "dI_scale", dI_scale, "c_scale", c_scale, "c_loss_norm", c_loss_norm, "rho_max", rho_max, "maxiters_adam", maxiters_adam, "maxiters_lbfgs", maxiters_lbfgs, "adam_learning_rate", adam_learning_rate, "elapsed_seconds", elapsed)
+        "n_reinit", n_reinit, "l_init", l_init, "dI_scale", dI_scale, "c_scale", c_scale, "c_loss_norm", c_loss_norm, "rho_max", rho_max, "maxiters_adam", maxiters_adam, "maxiters_lbfgs", maxiters_lbfgs, "adam_learning_rate", adam_learning_rate, 
+        "elapsed_seconds", elapsed, "solver_diags", solver_diags, "lbfgs_info", lbfgs_info)
 
 	println("Finished run: $(location) on thread $(Threads.threadid())")
 
@@ -164,6 +171,11 @@ const rho_max = parse(Float64, get(ARGS, 10, "1.0"))
 const maxiters_adam = parse(Int, get(ARGS, 11, "2500"))
 const maxiters_lbfgs = parse(Int, get(ARGS, 12, "2000"))
 const adam_learning_rate = parse(Float64, get(ARGS, 13, "1e-3"))
+# solver diagnostics
+# Optional: record solver diagnostics every iteration - default false
+const solver_diag = parse(Bool, get(ARGS, 14, "false"))
+# Optional comma-separated seed list (e.g. "5,12,22") - default 1:n_seeds
+const seeds = length(ARGS) >= 15 ? parse.(Int, split(ARGS[15], ",")) : (1:n_seeds)
 # Non-default optimiser settings are added to the sim_name so they don't mix with earlier runs
 const optim_suffix = (maxiters_adam, maxiters_lbfgs, adam_learning_rate) == (2500, 2000, 1e-3) ? "" : "_adam=$(maxiters_adam)_lbfgs=$(maxiters_lbfgs)_lr=$(adam_learning_rate)"
 
@@ -205,7 +217,7 @@ const r = noise == 0 ? Inf : 1 / noise^2
 
 
 model_name = "ude_behaviour_model1"
-sim_name = "UDE_behaviour_model1_contact=$(contact_function)_traindata=$(train_length)_noise=$(noise)_dI=$(dI_scaling)_c=$(c_scaling)_c_loss_$(c_loss_norm ? "norm" : "raw")_reinit$(rho_max == 1.0 ? "" : "_rhomax=$(rho_max)")$(optim_suffix)"
+sim_name = "UDE_behaviour_model1_contact=$(contact_function)_traindata=$(train_length)_noise=$(noise)_dI=$(dI_scaling)_c=$(c_scaling)_c_loss_$(c_loss_norm ? "norm" : "raw")_reinit$(rho_max == 1.0 ? "" : "_rhomax=$(rho_max)")$(optim_suffix)$(solver_diag ? "_solverdiag" : "")"
 
 if !isdir(datadir("exp_pro","sims", model_name, sim_name))
     mkpath(datadir("exp_pro","sims", model_name, sim_name))
@@ -263,7 +275,7 @@ c_scale = c_scaling == "none" ? 1.0 : c_scaling == "100" ? 100.0 : c_scaling == 
           c_scaling == "c0" ? c0 : error("c_scaling must be \"none\", \"100\", \"sum\" or \"c0\"")
 
 # run the model on multiple threads
-Threads.@threads for i = 1:n_seeds
+Threads.@threads for i in seeds
     # Resume support: skip a seed whose results already exist, so a rerun (e.g. after
     # a timeout or crash) only computes the seeds still missing instead of starting
     # over from seed 1.
