@@ -60,7 +60,7 @@ function symbolic_regression(I_nn, best_results, output_dir, input_size, locatio
     max_i_norm = maximum(norm_i_traj)
     min_i_norm = minimum(norm_i_traj)
 
-    SR_input_1000, SR_input_0_1, SR_input_days, nn_input_1000, nn_input_0_1, nn_input_days, I_grid, range_0_1 = build_sr_inputs(p_trained, population, norm_i_traj, min_i_norm, max_i_norm, input_size)
+    SR_input_1000, SR_input_0_1, SR_input_days, nn_input_1000, nn_input_0_1, nn_input_days, I_grid, range_0_1 = build_sr_inputs(p_trained, population, norm_i_traj, min_i_norm, max_i_norm)
     
     nn_output_1000 = vec(beta_network(nn_input_1000, p_trained.nn_params, st_nn)[1])
     nn_output_0_1 = vec(beta_network(nn_input_0_1, p_trained.nn_params, st_nn)[1])
@@ -105,14 +105,17 @@ const noise = parse(Float64, get(ARGS, 2, "0.0"))
 
 # Number of data points the UDE was trained on - default 365
 const train_length = parse(Int, get(ARGS, 3, "365"))
-# Solver the UDE was trained with - default autotsit5 (AutoTsit5(Rosenbrock23()), default reltol)
-const solver_name = get(ARGS, 4, "autotsit5")
-# Multistart cut-off used to choose which seeds to keep - default 0.3
-const MS_limit = parse(Float64, get(ARGS, 5, "0.3"))
-const multistart = true
+# SR setting - default "production" (SR_PRODUCTION_SETTING below); an integer picks that entry of
+# SR_SETTINGS, the 25-setting sweep run on the test UDE fits
+const sr_setting_arg = get(ARGS, 4, "production")
 
-println("Settings: beta=$(beta_function), noise=$(noise), train_length=$(train_length), solver=$(solver_name), MS_limit=$(MS_limit)")
+println("Settings: beta=$(beta_function), noise=$(noise), train_length=$(train_length), SR setting=$(sr_setting_arg)")
 
+# Production setting, chosen from the sweep below: fitted on the NN at 1000 points on [0, 1],
+# parsimony=2, maxsize=14, complexity_of_constants=2
+const SR_PRODUCTION_SETTING = (input="unit", parsimony=2, maxsize=14, complexity_of_constants=2)
+
+# SR settings sweep (run on the test UDE fits), kept so those runs can be reproduced.
 # SR experiments, each run on every seed. maxsize=30 is SymbolicRegression.jl's default
 # 1. Which NN input/output pairs SR is fitted on (parsimony=3, maxsize=30, complexity_of_constants=2)
 const SR_INPUT_SETTINGS = [(input=input, parsimony=3, maxsize=30, complexity_of_constants=2) for input in ["unit", "train", "train_pm10"]]
@@ -132,16 +135,15 @@ sr_name(setting) = "SR_input=$(setting.input)_parsimony=$(setting.parsimony)_max
 
 
 
-# create an array job - one task per (SR setting, location) pair so all run simultaneously
-# (all 21 settings for one location take longer than the 24h limit).
-# Tasks 1-51 are setting 1 for every location, 52-102 setting 2, and so on (1-1275 in total)
+# Array job over locations, as for the UDE runs: one task per location (array 1-51, sorted location codes)
 const LOCATIONS = sort(collect(keys(POPULATION)))
 task_id = parse(Int, ENV["SLURM_ARRAY_TASK_ID"])
-location = LOCATIONS[mod1(task_id, length(LOCATIONS))]
-setting = SR_SETTINGS[cld(task_id, length(LOCATIONS))]
+location = LOCATIONS[task_id]
+setting = sr_setting_arg == "production" ? SR_PRODUCTION_SETTING : SR_SETTINGS[parse(Int, sr_setting_arg)]
 println("Running symbolic regression for location: $(location), $(sr_name(setting))")
 
-sim_name = "$(solver_name)_UDE_single_beta=$(beta_function)_adam=2500_lbfgs=2000_traindata=$(train_length)_noise=$(noise)"
+# Production UDE folder (same name as in scripts/ude_model_single_traj.jl)
+sim_name = "UDE_single_beta=$(beta_function)_traindata=$(train_length)_noise=$(noise)"
 root = datadir("exp_pro","sims",  "ude_single", sim_name, "synthetic_$(location)")
 
 # Number of NN inputs (single vs multiple datset settings)
@@ -187,7 +189,10 @@ u0 = [S0, E0, I0, R0_recovered, D0]
 
 # Define ODE problem with recovered SR equation
 
-seed_folders = get_seed_folders(root, multistart, MS_limit)
+# Seeds kept by the multistart selection rule (scripts/multistart.jl)
+seeds_to_keep = JLD2.load(joinpath(root, "seeds_to_keep_selected.jld2"))["seeds_to_keep"]
+seed_folders = ["simulation_seed=$(s)" for s in seeds_to_keep]
+println("Found $(length(seed_folders)) selected seed simulations in $(root)")
 
 # Count failed runs so the job is marked FAILED in SLURM if any seed errors
 const n_failed = Ref(0)
@@ -250,13 +255,15 @@ for folder in seed_folders
         =============================================================#
 
 
-        seird_sr! = make_seird_sr(mach, r, sigma, gamma, delta, population, input_size)
+        seird_sr! = make_seird_sr(mach, r, sigma, gamma, delta, population)
         prob_sr = ODEProblem(seird_sr!, u0, tspan)
         sol_sr = solve(prob_sr, AutoTsit5(Rosenbrock23()), saveat=1.0)
         i_sr = sol_sr[3, 1:length(obs)]
 
-        # Save both report and machine to the same file and all trajectories
-        JLD2.save(joinpath(output_dir, "SR_report.jld2"), "report", r, "mach", mach,
+        # Save the report (hall of fame: equations, losses, complexities, scores) and all trajectories.
+        # The fitted machine is not saved: it was ~90% of the file and the equations in the report can be
+        # evaluated without it.
+        JLD2.save(joinpath(output_dir, "SR_report.jld2"), "report", r,
             "SR_beta_days", SR_beta_days, "SR_beta_0_1", SR_beta_0_1, "SR_inf", i_sr,
             "true_beta_days", true_beta_days, "NN_beta_days", NN_beta_days,
             "true_beta_0_1", true_beta_0_1, "NN_beta_0_1", NN_beta_0_1,
